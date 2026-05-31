@@ -1,0 +1,467 @@
+import os
+import gymnasium as gym
+from stable_baselines3 import PPO
+from stable_baselines3.common.callbacks import CheckpointCallback
+from stable_baselines3.common.logger import configure
+from stable_baselines3.common.callbacks import BaseCallback
+
+from Ambiente import OrnitoEnv
+
+class CurriculoEnergiaCallback(BaseCallback):
+    def __init__(self, num_steps, verbose=0):
+        super(CurriculoEnergiaCallback, self).__init__(verbose)
+
+        # Configuração dos limites da rampa
+        self.passo_final_rampa = num_steps - 1e3  # A rampa dura 4000 steps, e fica constante depois disso
+        
+        # Gravidade: Começa na Lua (-1.62) e termina na Terra (-9.81)
+        self.g_inicial = -1.62
+        self.g_final = -9.81
+
+        # Kutta Lift: Começa super alto (8.0) e termina no valor real do artigo (3.14) 
+        self.ck_inicial = 8.0
+        self.ck_final = 3.14
+
+        # Velocidade da aeronave no começo do episódio
+        self.vel_inicial = 3.8
+        self.vel_final = 1.6
+
+        # Penalidade de energia, para incentivar comportamentos mais frenéticos no começo e mais econômicos no final
+        self.ener_inicial = -0.0001
+        self.ener_final = -0.05
+
+    def _on_step(self) -> bool:
+        # Acessa o tempo global do PPO (funciona perfeitamente se retomar o treino!)
+        passo_atual = self.num_timesteps
+
+        if passo_atual <= self.passo_final_rampa:
+            # Calcula o fator de interpolação linear (alfa vai de 0.0 a 1.0)
+            alfa = min(passo_atual / self.passo_final_rampa, 1.0)
+
+            # Equação da rampa: valor = inicial + alfa * (final - inicial)
+            g_atual = self.g_inicial + alfa * (self.g_final - self.g_inicial)
+            ck_atual = self.ck_inicial + alfa * (self.ck_final - self.ck_inicial)
+            vel_atual = self.vel_inicial + alfa * (self.vel_final - self.vel_inicial)
+
+            # # Lógica de transição suave (Curriculum Learning)
+            # if passo_atual < 2_000_000:
+            #     # Fase 1: Liberdade para explorar flapeio (punição quase nula)
+            #     novo_peso = -0.0001
+            #     novo_bonus = 0.0
+            # elif passo_atual < 4_000_000:
+            #     # Fase 2: Começa a apertar o cinto
+            #     novo_peso = -0.0001
+            #     novo_bonus = 0.0
+            # else:
+            #     # Fase 3: Punição completa igual ao artigo
+            #     novo_peso = -0.0001
+            #     novo_bonus = 0.0 
+
+            # Injeta os valores na memória do ambiente a cada step do treino
+            self.training_env.env_method("set_curriculo", -0.0001, 0.0, g_atual, ck_atual, vel_atual)
+
+            # Print opcional a cada 50k steps para você monitorar no terminal
+            if passo_atual % 50_000 == 0:
+                print(f"[CURRÍCULO] Passo: {passo_atual} | Gravidade Z: {g_atual:.2f} | C_K: {ck_atual:.2f} | Velocidade Inicial: {vel_atual:.2f}")
+
+        return True
+
+# SCRIPT DE TREINAMENTO
+if __name__ == "__main__":
+    models_dir = "C:/Users/pedro/Desktop/Ornitos/models"
+    logdir = "C:/Users/pedro/Desktop/Ornitos/logs"
+    os.makedirs(models_dir, exist_ok=True)
+    os.makedirs(logdir, exist_ok=True)
+
+    # --- CHAVES MESTRAS DE CONTROLE ---
+    CONTINUAR_TREINO = True  # True = Continua o treino de onde parou (na mesma pasta ou em outra), False = Inicia do zero 
+    MESMA_PASTA = False  # False = Transfusão de consciência (zera os steps, nova pasta, mantém o cérebro)
+
+    # Nomes para o TensorBoard
+    NOME_RUN_ANTIGA = "PPO_Voo_Reto_novo_2"
+    NOME_RUN_NOVA = "PPO_Voo_Reto_novo" # Nome para a pasta nova caso MESMA_PASTA seja False
+
+    NUM_STEPS = 5e6 # Total de steps para o treinamento
+    
+    path_do_ultimo_checkpoint = f"{models_dir}/ornito_model_novo_4500000_stepsBEST.zip" # Maior pontuação de Voo no primeiro treino de 8Msteps
+
+    # Instancia o Ambiente
+    env = OrnitoEnv()
+    env.set_render_mode(True)  # Ativa a renderização para visualização do treinamento (deixar False para treinar mais rápido)
+    env = gym.wrappers.TimeLimit(env, max_episode_steps=5000)
+
+    # Configura Callback dos logs
+    checkpoint_callback = CheckpointCallback(
+        save_freq=100000,
+        save_path=models_dir,
+        name_prefix="ornito_model_novo"
+    )
+
+    callback_energia = CurriculoEnergiaCallback(NUM_STEPS)
+    meus_callbacks = [checkpoint_callback, callback_energia]
+    # meus_callbacks = [checkpoint_callback]
+
+    # --- LÓGICA DE INSTANCIAÇÃO DO MODELO ---
+    if CONTINUAR_TREINO and os.path.exists(path_do_ultimo_checkpoint):
+        
+        if MESMA_PASTA:
+            print(f"Cérebro carregado! Continuando o treino na MESMA pasta ({NOME_RUN_ANTIGA})...")
+            model = PPO.load(path_do_ultimo_checkpoint, env=env, learning_rate=3e-4)
+            
+            # Força o modelo a usar a exata mesma pasta de log antiga
+            caminho_log_exato = f"{logdir}/{NOME_RUN_ANTIGA}"
+            novo_logger = configure(caminho_log_exato, ["stdout", "tensorboard"])
+            model.set_logger(novo_logger)
+            
+            reset_timesteps = False
+            nome_run_final = NOME_RUN_ANTIGA
+            
+        else:
+            print(f"Transfusão de Consciência! Cérebro carregado. Iniciando NOVA pasta ({NOME_RUN_NOVA}) e zerando os steps...")
+            # Carrega os pesos, mas define o diretório de log para ele criar a nova run
+            model = PPO.load(path_do_ultimo_checkpoint, env=env, tensorboard_log=logdir, learning_rate=3e-4)
+            
+            reset_timesteps = True
+            nome_run_final = NOME_RUN_NOVA
+
+    else:
+        if CONTINUAR_TREINO:
+            print("Aviso: Checkpoint não encontrado. Iniciando um modelo do ZERO.")
+        else:
+            print("Iniciando um novo modelo do ZERO por escolha.")
+            
+        model = PPO(
+            "MlpPolicy",
+            env,
+            verbose=1,
+            tensorboard_log=logdir,
+            learning_rate=3e-4,
+            n_steps=2048,
+            batch_size=64
+        )
+        reset_timesteps = True
+        nome_run_final = NOME_RUN_NOVA
+
+    # --- INÍCIO DO TREINAMENTO ---
+    print("Iniciando Treinamento!")
+    model.learn(
+        total_timesteps = NUM_STEPS,
+        tb_log_name = nome_run_final,
+        reset_num_timesteps = reset_timesteps,
+        callback = meus_callbacks  # Para realizar treinamento de currículo
+    )
+
+    # Cria uma subpasta dentro de 'models' com o mesmo nome da run
+    pasta_checkpoints = f"{models_dir}/{nome_run_final}"
+    os.makedirs(pasta_checkpoints, exist_ok=True)
+
+    # --- SALVAMENTO FINAL ---
+    if CONTINUAR_TREINO:
+        print("Treinamento de continuação/transfusão finalizado. Salvando o progresso final...")
+        model.save(f"{models_dir}/ornito_model_novo_final_continuacao")
+    else:
+        print("Treinamento do zero finalizado. Salvando modelo...")
+        model.save(f"{models_dir}/final_model_ornito_novo")
+        model.save(f"{pasta_checkpoints}/{nome_run_final}_final")
+
+    env.close()
+
+# cd C:/Users/pedro/Desktop/Ornitos
+# python -m tensorboard.main --logdir=logs
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ==========================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import time
+import numpy as np
+import mujoco
+import mujoco.viewer
+import gymnasium as gym
+from gymnasium import spaces
+from collections import deque
+
+xml_path = "Current_Model.xml"
+
+# AMBIENTE
+class OrnitoEnv(gym.Env):
+    def __init__(self):
+        super(OrnitoEnv, self).__init__()
+        self.model = mujoco.MjModel.from_xml_path(xml_path)
+        self.data = mujoco.MjData(self.model)
+    
+        # Atuadores (5 motores)
+        self.action_space = spaces.Box(low=-1, high=1, shape=(5,), dtype=np.float32)
+        
+        # Observação: ((13 sensores atuais + 5 ações atuais) * 25 frames histórico) + (30 pontos futuro * 3 coords) = 540
+        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(540,), dtype=np.float32)
+
+        # Filtro e Frequências
+        self.dt_ia = 0.02
+        self.alpha = (2*np.pi*self.dt_ia*7.0)/(2*np.pi*self.dt_ia*7.0 + 1)
+        self.last_action = np.zeros(5)
+        self.history = deque(maxlen=25)
+
+        # print(self.model.geom_fluid)
+        self.assign_coefs_to_surfs([0.2, 0.12, 1.5, 3.14, 1.0, 0, 0, 0, 0, 0, 0, 0])
+        # print(self.model.geom_fluid)
+
+        self.limiter_deltas = self._calculate_max_deltas() # Calcula os limites de variação para os motores com base no XML
+
+        self.peso_energia = -0.0001
+
+        self.bonus_sobrevivencia = 0.0
+
+        self.render_mode = False
+
+        self.vel_target = 3.8
+        self.vel_init = self.vel_target
+
+        self.global_step = 0  # Inicia o relógio zerado
+
+    def set_global_step(self, step_atual):
+        """O Callback chama isso a cada frame apenas para atualizar o número"""
+        self.global_step = step_atual
+
+    def set_render_mode(self, mode:bool):
+        self.render_mode = mode
+        if mode:
+            self.viewer = mujoco.viewer.launch_passive(self.model, self.data)
+        elif not mode:
+            self.viewer = None
+
+    def set_curriculo(self, novo_peso_energia, novo_bonus, g_z, valor_ck, vel_init):
+        self.model.opt.gravity[2] = g_z
+        self.peso_energia = novo_peso_energia
+        # self.bonus_sobrevivencia = novo_bonus
+        coefs_atualizados = [0.2, 0.12, 1.5, valor_ck, 1.0, 0, 0, 0, 0, 0, 0, 0]
+        self.vel_init = vel_init
+        self.assign_coefs_to_surfs(coefs_atualizados)
+
+    def _calculate_max_deltas(self):
+        # A ordem aqui DEVE ser a mesma que a sua IA devolve na variável 'action'
+        motores = ['motor_q1', 'motor_q2', 'motor_q3', 'motor_q4', 'motor_q5']
+        deltas = np.zeros(5)
+        
+        v_max_rad_s = np.deg2rad(600) # Converte 600 graus/s para rad/s
+        max_rad_per_step = v_max_rad_s*self.dt_ia
+
+        for i, nome in enumerate(motores):
+            try:
+                a_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_ACTUATOR, nome)
+                ctrl_range = self.model.actuator_ctrlrange[a_id] # Retorna [min, max] em radianos
+                
+                # Amplitude física total do motor (ex: max - min)
+                amplitude_rad = ctrl_range[1] - ctrl_range[0]
+                
+                # Regra de 3: Converte o limite físico para a escala normalizada da ação
+                deltas[i] = (max_rad_per_step / amplitude_rad) * 2.0
+            except:
+                print(f"Erro: Atuador '{nome}' não encontrado no modelo.")
+        
+        print("Delta motores calculado")
+        return deltas
+
+    def assign_coefs_to_surfs(self, coefs:list):
+        # IDs das geoms (certifique-se que os nomes batem com o seu XML)
+        asas = ['wing_l', 'wing_r', 'tail'] # nomes das geoms
+
+        # Coeficientes: [Sustentação, Arrasto, Momento, Kutta_Lift, Escala_Força, ...]
+        # MuJoCo usa 12 slots internos. Vamos preencher os 5 primeiros.
+        novos_coefs = coefs
+
+        for nome in asas:
+            try:
+                g_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, nome)
+                self.model.geom_fluid[g_id] = novos_coefs
+                print(".cf")
+                # print(f"Sucesso: Coeficientes de {nome} atualizados manualmente.")
+            except:
+                print(f"Erro: Geom '{nome}' não encontrada no modelo.")
+
+        # Verifique o coeficiente de arrasto da primeira asa (geom id ou nome)
+        geom_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, 'wing_l')
+        # print(f"Coeficientes do fluido da asa: {self.model.geom_fluid[geom_id]}")
+
+        mujoco.mj_resetData(self.model, self.data)
+
+
+    def _get_obs(self):
+        # Sensores (13 valores)
+        eta = self.data.qpos[3:7]  # Quatérnio
+        pqr = self.data.qvel[3:6]  # Vel Angular
+        qj = self.data.qpos[7:12]  # Juntas
+        vx = np.array([self.data.qvel[0]]) # Pitot
+        current_obs = np.concatenate([eta, pqr, qj, vx, self.last_action])
+        
+        self.history.append(current_obs)
+        
+        # Trajetória Futura (Look-ahead: 30 pontos)
+        lim_fut = 30
+        future_traj = []
+        for i in range(1, lim_fut + 1):
+            t_futuro = self.data.time + (i * self.dt_ia)
+            # Posição alvo futura relativa ao robô (Eixo X linear)
+            pos_f = np.array([self.vel_target * t_futuro, 0.0, 12.0]) - self.data.qpos[:3]
+            future_traj.append(pos_f)
+            
+        return np.concatenate([np.array(self.history).flatten(), np.array(future_traj).flatten()])
+
+    def step(self, action):
+        
+        action = np.clip(action, self.last_action - self.limiter_deltas, self.last_action + self.limiter_deltas)
+        # Filtro Passa-Baixa nos comandos da IA, para evitar oscilações bruscas.
+        filtered_action = self.alpha * action + (1 - self.alpha) * self.last_action
+        self.last_action = filtered_action
+
+        # Envia ação para o MuJoCo
+        self.data.ctrl[:] = filtered_action
+
+        for _ in range(5):
+            # Atualiza alvo no MuJoCo para visualização
+            self.data.mocap_pos[0] = [self.vel_target * self.data.time, 0.0, 12.0]
+            mujoco.mj_step(self.model, self.data)
+
+            # Sincroniza o visualizador a cada passo de física se estiver ativo
+            if self.render_mode and self.viewer.is_running():
+                self.viewer.sync()
+                self.viewer.cam.lookat = self.data.body('torso').xpos
+                self.viewer.cam.distance = 5.0
+                time.sleep(0.002)
+
+        if np.any(np.abs(self.data.qvel) > 100) or np.any(np.isnan(self.data.qpos)):
+            obs = self.reset()[0] # Força um reset seguro para limpar os NaNs
+            return obs, -100.0, True, False, {} # Retorna punição máxima e encerra
+
+        obs = self._get_obs()
+        reward = self._compute_reward(filtered_action)
+        
+        lim_area = 4.0
+
+        dist = np.linalg.norm(self.data.qpos[:3] - self.data.mocap_pos[0])
+        terminated = bool(dist > lim_area) # Fora da área
+
+        if terminated:
+            reward -= 30.0 # Punição fixa por morte
+
+        truncated = False
+        
+        return obs, reward, terminated, truncated, {}
+
+    def _compute_reward(self, action):
+        # 1. Rastreamento de Posição (Gaussiana)
+        # O uso do exp() garante que o erro máximo seja assintótico a 0, 
+        # evitando o "suicídio" da IA por punições infinitas (-dist^2).
+        dist = np.linalg.norm(self.data.qpos[:3] - self.data.mocap_pos[0])
+        r_pos = np.exp(-0.2 * (dist**2)) # Retorna 1 se perfeito, cai suavemente para 0 se longe
+
+        # 2. Estabilidade Angular (Penaliza apenas Roll e Pitch, permite Yaw)
+        # Usamos a matriz de rotação do torso para extrair os ângulos reais de forma limpa
+        mat = self.data.body('torso').xmat.reshape(3, 3)
+        pitch = np.arcsin(np.clip(-mat[2, 0], -1.0, 1.0))
+        roll = np.arctan2(mat[2, 1], mat[2, 2])
+        r_att = np.exp(-2.0 * (pitch**2 + roll**2)) # 1 quando nivelado, decai se inclinar
+
+        # 3. Taxa de Rotação do Corpo (Suavidade)
+        r_omega = np.exp(-0.1 * np.sum(np.square(self.data.qvel[3:6])))
+
+        # Alternativa de Energia: penalizar a variação da ação em relação ao step anterior
+        delta_action = action - self.last_action 
+        r_en = self.peso_energia*np.sum(np.square(delta_action))
+
+        # Retorna o somatório com os pesos baseados no artigo
+        return (0.5 * r_pos) + (0.2 * r_att) + (0.1 * r_omega) + r_en + self.bonus_sobrevivencia
+
+    def reset(self, seed=None, options=None):
+        super().reset(seed=seed)
+        mujoco.mj_resetData(self.model, self.data)
+
+        self.data.qpos[2] = 12.0  # Altitude de spawn
+        self.data.qvel[0] = self.vel_init  # Velocidade inicial de planeio (V0)
+
+        self.history.clear()
+
+        lim_hist = 25
+        num_sensors= 18 # 13 sensores + 5 ações anteriores
+
+        # Preenche com zeros se o histórico ainda não estiver cheio
+        while len(self.history) < lim_hist:
+            self.history.append(np.zeros(num_sensors))
+
+        self.last_action = np.zeros(5)
+        return self._get_obs(), {}
+    
+    def close(self):
+        # Boa prática: fechar o visualizador ao encerrar o script
+        if self.viewer is not None:
+            self.viewer.close()
+
+
+# TESTAR ASPECTOS INDIVIDUAIS DO AMBIENTE
+if __name__ == "__main__":
+    import numpy as np
+    import time
+    
+    # 1. Instancia o ambiente apenas para teste local
+    print("Iniciando ambiente em modo de teste...")
+    env = OrnitoEnv() 
+    obs, info = env.reset()
+
+    print("\n--- Verificação do Setup ---")
+    print(f"Limites de Delta Calculados (q1 a q5): {env.limiter_deltas}")
+    
+    # 2. Criamos uma ação de teste isolada
+    # Exemplo: Comanda ação máxima (1.0) APENAS no índice 0 (esperado: motor_q1)
+    acao_teste = np.array([1.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32)
+    
+    print("\n--- Injetando Ação Teste ---")
+    print(f"Ação enviada pelo 'cérebro': {acao_teste}")
+
+    # Roda alguns steps para o filtro passa-baixa e o integrador processarem
+    for _ in range(10): 
+        obs, reward, terminated, truncated, info = env.step(acao_teste)
+        
+    # 3. Verifica o que chegou de fato nos atuadores do MuJoCo
+    print(f"Buffer de controle do MuJoCo (data.ctrl): {env.data.ctrl[:5]}")
+    
+    # Verifica o estado da física (posição das juntas)
+    # Os índices exatos dependem do seu XML, mas qpos geralmente guarda as posições
+    print(f"Velocidades resultantes (data.qvel): {env.data.qvel[:10]}") 
+    
+    env.close()

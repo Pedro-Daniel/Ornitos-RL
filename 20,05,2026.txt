@@ -1,0 +1,195 @@
+import time
+import numpy as np
+import mujoco
+import mujoco.viewer
+import gymnasium as gym
+from gymnasium import spaces
+from collections import deque
+
+xml_path = "Current_Model.xml"
+
+# AMBIENTE
+class OrnitoEnv(gym.Env):
+    def __init__(self):
+        super(OrnitoEnv, self).__init__()
+        self.model = mujoco.MjModel.from_xml_path(xml_path)
+        self.data = mujoco.MjData(self.model)
+    
+        # print(self.model.geom_fluid)
+        self.assign_coefs_to_surfs([0.2, 0.12, 1.5, 3.14, 1.0, 0, 0, 0, 0, 0, 0, 0])
+        # print(self.model.geom_fluid)
+
+        # Atuadores (5 motores)
+        self.action_space = spaces.Box(low=-1, high=1, shape=(5,), dtype=np.float32)
+        
+        # Observação: ((13 sensores atuais + 5 ações atuais) * 25 frames histórico) + (30 pontos futuro * 3 coords) = 540
+        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(540,), dtype=np.float32)
+
+        # Filtro e Frequências
+        self.dt_ia = 0.02
+        self.alpha = (2*np.pi*self.dt_ia*7.0)/(2*np.pi*self.dt_ia*7.0 + 1)
+        self.last_action = np.zeros(5)
+        self.history = deque(maxlen=25)
+
+        self.render_mode = False
+        
+        # Se o render for True, abre a janela passiva do MuJoCo
+        if self.render_mode:
+            self.viewer = mujoco.viewer.launch_passive(self.model, self.data)
+        else:
+            self.viewer = None
+
+        self.vel_target = 3.8
+
+    def get_limiter_angles(self):
+        motores = ['motor_q1', 'motor_q2', 'motor_q3', 'motor_q4', 'motor_q5']
+        obj = {}
+
+        for nome in motores:
+            try:
+                a_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_ACTUATOR, nome)
+                obj[nome] = [a_id, self.model.actuator_ctrlrange[a_id]]
+            except:
+                print(f"Erro: Atuador '{nome}' não encontrado no modelo.")
+        return obj
+
+    def assign_coefs_to_surfs(self, coefs:list):
+        # IDs das geoms (certifique-se que os nomes batem com o seu XML)
+        asas = ['wing_l', 'wing_r', 'tail'] # nomes das geoms
+
+        # Coeficientes: [Sustentação, Arrasto, Momento, Escala_Angular, Escala_Força, ...]
+        # MuJoCo usa 12 slots internos. Vamos preencher os 5 primeiros.
+        novos_coefs = coefs
+
+        for nome in asas:
+            try:
+                g_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, nome)
+                self.model.geom_fluid[g_id] = novos_coefs
+                print(f"Sucesso: Coeficientes de {nome} atualizados manualmente.")
+            except:
+                print(f"Erro: Geom '{nome}' não encontrada no modelo.")
+
+        # Verifique o coeficiente de arrasto da primeira asa (geom id ou nome)
+        geom_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, 'wing_l')
+        print(f"Coeficientes do fluido da asa: {self.model.geom_fluid[geom_id]}")
+
+        mujoco.mj_resetData(self.model, self.data)
+
+
+    def _get_obs(self):
+        # Sensores (13 valores)
+        eta = self.data.qpos[3:7]  # Quatérnio
+        pqr = self.data.qvel[3:6]  # Vel Angular
+        qj = self.data.qpos[7:12]  # Juntas
+        vx = np.array([self.data.qvel[0]]) # Pitot
+        current_obs = np.concatenate([eta, pqr, qj, vx, self.last_action])
+        
+        self.history.append(current_obs)
+        
+        # Trajetória Futura (Look-ahead: 30 pontos)
+        lim_fut = 30
+        future_traj = []
+        for i in range(1, lim_fut + 1):
+            t_futuro = self.data.time + (i * self.dt_ia)
+            # Posição alvo futura relativa ao robô (Eixo X linear)
+            pos_f = np.array([self.vel_target * t_futuro, 0.0, 12.0]) - self.data.qpos[:3]
+            future_traj.append(pos_f)
+            
+        return np.concatenate([np.array(self.history).flatten(), np.array(future_traj).flatten()])
+
+    def step(self, action):
+        
+        # Limitador da ação da IA, imita um servo real.
+        max_delta = 0.5
+        action = np.clip(action, self.last_action - max_delta, self.last_action + max_delta)
+
+        # Filtro Passa-Baixa nos comandos da IA, para evitar oscilações bruscas.
+        filtered_action = self.alpha * action + (1 - self.alpha) * self.last_action
+        self.last_action = filtered_action
+
+        # Envia ação para o MuJoCo
+        self.data.ctrl[:] = filtered_action
+
+        vel_target = 3.8
+
+        for _ in range(5):
+            # Atualiza alvo no MuJoCo para visualização
+            self.data.mocap_pos[0] = [self.vel_target * self.data.time, 0.0, 12.0]
+            mujoco.mj_step(self.model, self.data)
+
+            # Sincroniza o visualizador a cada passo de física se estiver ativo
+            if self.render_mode and self.viewer.is_running():
+                self.viewer.sync()
+                self.viewer.cam.lookat = self.data.body('torso').xpos
+                self.viewer.cam.distance = 5.0
+                time.sleep(0.002)
+
+        if np.any(np.abs(self.data.qvel) > 100) or np.any(np.isnan(self.data.qpos)):
+            obs = self.reset()[0] # Força um reset seguro para limpar os NaNs
+            return obs, -100.0, True, False, {} # Retorna punição máxima e encerra
+
+        obs = self._get_obs()
+        reward = self._compute_reward(filtered_action)
+        # reward += 0.2*self.data.qvel[0] ### FORÇAR IR PRA FRENTE
+        # reward += 1 - 1*((self.data.qpos[2] - 12)**2)/4 ### FORÇAR ALTITUDE NIVELADA
+        # reward += 1 - 1*((self.data.qpos[1] - 0)**2)/4 ### FORÇAR ESTABILIDADE LATERAL
+        
+        lim_area = 5.0
+
+        dist = np.linalg.norm(self.data.qpos[:3] - self.data.mocap_pos[0])
+        terminated = bool(dist > lim_area) # Fora da área
+
+        if terminated:
+            reward -= 30.0 # Punição fixa por morte
+
+        truncated = False
+        
+        return obs, reward, terminated, truncated, {}
+
+    def _compute_reward(self, action):
+        # 1. Rastreamento de Posição (Gaussiana)
+        # O uso do exp() garante que o erro máximo seja assintótico a 0, 
+        # evitando o "suicídio" da IA por punições infinitas (-dist^2).
+        dist = np.linalg.norm(self.data.qpos[:3] - self.data.mocap_pos[0])
+        r_pos = np.exp(-0.2 * (dist**2)) # Retorna 1 se perfeito, cai suavemente para 0 se longe
+
+        # 2. Estabilidade Angular (Penaliza apenas Roll e Pitch, permite Yaw)
+        # Usamos a matriz de rotação do torso para extrair os ângulos reais de forma limpa
+        mat = self.data.body('torso').xmat.reshape(3, 3)
+        pitch = np.arcsin(np.clip(-mat[2, 0], -1.0, 1.0))
+        roll = np.arctan2(mat[2, 1], mat[2, 2])
+        r_att = np.exp(-2.0 * (pitch**2 + roll**2)) # 1 quando nivelado, decai se inclinar
+
+        # 3. Taxa de Rotação do Corpo (Suavidade)
+        r_omega = np.exp(-0.1 * np.sum(np.square(self.data.qvel[3:6])))
+
+        # Alternativa de Energia: penalizar a variação da ação em relação ao step anterior
+        delta_action = action - self.last_action 
+        r_en = -0.1 * np.sum(np.square(delta_action))
+
+        # Retorna o somatório com os pesos baseados no artigo
+        return (0.5 * r_pos) + (0.2 * r_att) + (0.1 * r_omega) + r_en
+
+    def reset(self, seed=None, options=None):
+        super().reset(seed=seed)
+        mujoco.mj_resetData(self.model, self.data)
+
+        self.data.qpos[2] = 12.0  # Altitude de spawn
+        self.data.qvel[0] = self.vel_target  # Velocidade inicial de planeio (V0)
+
+        self.history.clear()
+
+        lim_hist = 25
+        num_sensors= 18 # 13 sensores + 5 ações anteriores
+
+        # Preenche com zeros se o histórico ainda não estiver cheio
+        while len(self.history) < lim_hist:
+            self.history.append(np.zeros(num_sensors))
+
+        self.last_action = np.zeros(5)
+        return self._get_obs(), {}
+    
+    def close(self):
+        # Boa prática: fechar o visualizador ao encerrar o script
+        if self.viewer is not None:
+            self.viewer.close()

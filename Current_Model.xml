@@ -1,0 +1,92 @@
+<mujoco model="Ornithopter_UnB_Final">
+    <compiler angle="degree" coordinate="local" inertiafromgeom="true"/>
+    
+    <statistic center="0 0 12" extent="2"/>
+    
+    <option timestep="0.0015" integrator="RK4" gravity="0 0 -9.81" density="1.225" viscosity="0.000018">
+        <flag energy="enable"/>
+    </option>
+
+    <asset>
+        <material name="carbon_fiber" rgba="0.1 0.1 0.1 0.4"/>
+        <material name="wing_mylar" rgba="0 0.5 0.8 0.6"/>
+        <material name="joint_visual" rgba="1 0 0 1"/>
+        <material name="motor_internal" rgba="0.5 0 0 1"/>
+    </asset>
+
+    <worldbody>
+        <light diffuse=".5 .5 .5" pos="0 0 3" dir="0 0 -1"/>
+        <geom type="plane" size="100 100 0.1" rgba=".9 .9 .9 1"/>
+
+        <body name="target" mocap="true" pos="0 0 12">
+            <geom type="sphere" size="0.1" rgba="1 0 0 0.5" contype="0" conaffinity="0"/>
+        </body>
+
+        <!-- CORPO PRINCIPAL -->
+        <body name="torso" pos="0 0 12">
+            <freejoint name="root"/>
+
+            <!-- Fuselagem Principal (GeoGebra): 255g total, motores inclusos aqui -->
+            <geom name="fuselagem" type="ellipsoid" pos="0.12995 0 0" size="0.1565 0.035 0.028" mass="0.210" material="carbon_fiber"/>
+
+            <!-- Massas dos Motores (9g cada) posicionadas internamente para ajuste de CG -->
+            <geom name="m_flap_l_mass" type="sphere" pos="0.09 0.02 0" size="0.01" mass="0.009" material="motor_internal"/>
+            <geom name="m_flap_r_mass" type="sphere" pos="0.09 -0.02 0" size="0.01" mass="0.009" material="motor_internal"/>
+            <geom name="m_pitch_l_mass" type="sphere" pos="0.06 0.02 0" size="0.01" mass="0.009" material="motor_internal"/>
+            <geom name="m_pitch_r_mass" type="sphere" pos="0.06 -0.02 0" size="0.01" mass="0.009" material="motor_internal"/>
+            <geom name="m_tail_mass" type="sphere" pos="0.03 0 0" size="0.01" mass="0.009" material="motor_internal"/>
+
+            <!-- Tubo de Cauda (4g) -->
+            <geom name="tail_tube" type="cylinder" fromto="-0.02197 0 0 -0.37657 0 0" size="0.006" mass="0.004" material="carbon_fiber"/>
+
+            <!-- ASA ESQUERDA -->
+            <body name="asa_esq_flap" pos="0 0.01951 0">
+                <joint name="q1_flap_esq" type="hinge" axis="1 0 0" range="-45 45" damping="0.1"/>
+                <!-- Cilindro de placeholder para satisfazer mjMINVAL -->
+                <geom type="cylinder" size="0.005 0.005" mass="0.0001" material="joint_visual"/>
+                
+                <body name="asa_esq_pitch" pos="0 0.00249 0">
+                    <joint name="q2_pitch_esq" type="hinge" axis="0 1 0" range="-25 25" damping="0.05"/>
+                    <geom type="cylinder" size="0.005 0.005" mass="0.0001" material="joint_visual" euler="90 0 0"/>
+                    
+                    <body name="asa_esq">
+                        <geom name="wing_l" type="ellipsoid" pos="0 0.23625 0" size="0.1139 0.2362 0.005" mass="0.020" material="wing_mylar" fluidcoef="0.2 0.12 1.5 3.14 1.0"/>
+                    </body>
+                </body>
+            </body>
+
+            <!-- ASA DIREITA -->
+            <body name="asa_dir_flap" pos="0 -0.01951 0">
+                <joint name="q3_flap_dir" type="hinge" axis="1 0 0" range="-45 45" damping="0.1"/>
+                <geom type="cylinder" size="0.005 0.005" mass="0.0001" material="joint_visual"/>
+                
+                <body name="asa_dir_pitch" pos="0 -0.00249 0">
+                    <joint name="q4_pitch_dir" type="hinge" axis="0 1 0" range="-25 25" damping="0.05"/>
+                    <geom type="cylinder" size="0.005 0.005" mass="0.0001" material="joint_visual" euler="90 0 0"/>
+                    
+                    <body name="asa_dir">
+                        <geom name="wing_r" type="ellipsoid" pos="0 -0.23625 0" size="0.1139 0.2362 0.005" mass="0.020" material="wing_mylar" fluidcoef="0.2 0.12 1.5 3.14 1.0"/>
+                    </body>
+                </body>
+            </body>
+
+            <!-- CAUDA -->
+            <body name="cauda_pitch" pos="-0.37657 0 0">
+                <joint name="q5_pitch_tail" type="hinge" axis="0 1 0" range="-35 35" damping="0.1"/>
+                <geom type="cylinder" size="0.005 0.005" mass="0.0001" material="joint_visual" euler="90 0 0"/>
+                
+                <body name="cauda">
+                    <geom name="tail_geom" type="ellipsoid" pos="-0.11333 0 0" size="0.1133 0.17 0.005" mass="0.009" material="wing_mylar" fluidcoef="0.2 0.12 1.5 3.14 1.0"/>
+                </body>
+            </body>
+        </body>
+    </worldbody>
+
+    <actuator>
+        <position name="motor_q1" joint="q1_flap_esq" kp="10"/>
+        <position name="motor_q2" joint="q2_pitch_esq" kp="5"/>
+        <position name="motor_q3" joint="q3_flap_dir" kp="10"/>
+        <position name="motor_q4" joint="q4_pitch_dir" kp="5"/>
+        <position name="motor_q5" joint="q5_pitch_tail" kp="5"/>
+    </actuator>
+</mujoco>

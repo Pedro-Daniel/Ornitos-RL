@@ -1,0 +1,272 @@
+import os
+
+import time
+
+import numpy as np
+
+import mujoco
+import mujoco.viewer
+
+import gymnasium as gym
+from gymnasium import spaces
+
+from collections import deque
+
+from stable_baselines3 import PPO
+from stable_baselines3.common.callbacks import CheckpointCallback
+
+def model():
+    # Instancia o modelo
+    model = PPO(
+        "MlpPolicy", 
+        env, 
+        verbose=1, 
+        tensorboard_log=logdir,
+        learning_rate=3e-4, # Valor padrão robusto, similar ao do paper
+        n_steps=2048,       # Quantidade de passos antes de atualizar a rede
+        batch_size=64       # Tamanho do pacote de dados para o gradiente
+    )
+    
+    # Inicia o aprendizado
+    # total_timesteps define o "tempo de vida" total do treino (ex: 1 milhão de passos)
+    model.learn(
+        total_timesteps=1000000, 
+        callback=checkpoint_callback,
+        tb_log_name="PPO_v1_voo_reto"
+    )
+
+# Salva o modelo final após a conclusão
+model.save(f"{models_dir}/final_model")
+
+def checkpoint():
+    # Salva um checkpoint a cada 10.000 passos de simulação
+    checkpoint_callback = CheckpointCallback(
+    save_freq=10000,
+    save_path=models_dir, 
+    name_prefix="ornito_model"
+    )
+
+class OrnitoEnv(gym.Env):
+    def __init__(self, model_path):
+        super(OrnitoEnv, self).__init__()
+        # Carrega o modelo XML que construímos
+        self.model = mujoco.MjModel.from_xml_path(model_path)
+        self.data = mujoco.MjData(self.model)
+        
+        # AÇÃO: 5 valores normalizados entre -1 e 1 (as 5 juntas) [cite: 82, 163]
+        self.action_space = spaces.Box(low=-1, high=1, shape=(5,), dtype=np.float32)
+        
+        # OBSERVAÇÃO: Sensores + Histórico + Trajetória futura [cite: 167, 169]
+        # (Definiremos o tamanho exato na próxima etapa)
+        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(120,), dtype=np.float32)
+
+        self.f_c = 7.0  # Frequência de corte (Hz)
+        self.dt = 0.02  # Passo da IA (50Hz)
+        
+        # Calculando o alpha (aproximação clássica)
+        self.alpha = (2 * np.pi * self.dt * self.f_c) / (2 * np.pi * self.dt * self.f_c + 1) # Alpha é o coeficiente de suavização
+        
+        # Estado anterior do filtro (começa em zero para as 5 juntas)
+        self.last_action = np.zeros(5)
+
+        # Guarda as últimas 25 observações (0.5 segundos a 50Hz)
+        self.history = deque(maxlen=25)
+
+    def get_observation(self):
+        # 1. Orientação (Quatérnio: 4 valores) [cite: 165]
+        # No MuJoCo, o quatérnio da base livre está em data.qpos[3:7]
+        eta = self.data.qpos[3:7] 
+
+        # 2. Velocidade Angular Local (3 valores: p, q, r) [cite: 165]
+        # data.qvel[3:6] nos dá a velocidade angular da base
+        pqr = self.data.qvel[3:6]
+
+        # 3. Posições das Juntas (5 valores: q1 a q5) [cite: 165]
+        # Pegamos apenas as posições das 5 juntas que criamos (ignorando a base livre)
+        qj = self.data.qpos[7:12]
+
+        # 4. Velocidade do Ar (Pitot Tube - 1 valor) [cite: 165]
+        # O artigo modela isso como a velocidade X local relativa ao ar 
+        # Para simplificar agora: pegamos a velocidade linear X do torso
+        vx_air = np.array([self.data.qvel[0]]) 
+
+        # Concatenamos tudo em um único vetor (13 valores por enquanto)
+        obs_atual = np.concatenate([eta, pqr, qj, vx_air])
+        
+        return obs_atual
+
+    def compute_reward(self, action):
+        # 1 Erro de Posição (r_pos)
+        pos_atual = self.data.qpos[:3]
+        pos_alvo = self.data.mocap_pos[0]
+        distancia = np.linalg.norm(pos_atual - pos_alvo) # Distância entre o torso e o alvo
+        
+        r_pos = np.exp(-2.0 * (distancia**2)) # Usa-se uma curva de sino para que a recompensa seja próxima de 1 apenas quando o erro próximo de 0.
+
+        # 2. Estabilidade Angular (r_omega)
+        # Penaliza velocidades angulares altas (p, q, r) para evitar que o robô gire loucamente
+        angular_vel = self.data.qvel[3:6]
+        r_omega = np.exp(-0.1 * np.sum(np.square(angular_vel)))
+
+        # 3. Estabilidade de Atitude (r_att)
+        # O artigo penaliza desvios excessivos de inclinação (Roll/Pitch)
+        # Aqui SIMPLIFICAMOS usando a diferença do quatérnio para a identidade (voo nivelado)
+        quat = self.data.qpos[3:7] # [w, x, y, z]
+        # Recompensa maior se o componente 'w' for próximo de 1 (ou seja, sem rotação)
+        r_att = quat[0]**2
+
+        # 4. Eficiência Energética (r_en)
+        # Penaliza o uso de torques altos (as ações da IA)
+        r_en = -np.sum(np.square(action))
+
+        # Recompensa Final Ponderada
+        reward = (0.5 * r_pos) + (0.1 * r_omega) + (0.2 * r_att) + (0.05 * r_en)
+        
+        return reward
+
+    def apply_filter(self, action_bruta):
+            # Aplica a equação: y = alpha*x + (1-alpha)*y_old
+            action_filtrada = self.alpha * action_bruta + (1 - self.alpha) * self.last_action
+            self.last_action = action_filtrada
+            return action_filtrada
+
+    def step(self, action):
+        # 1. Aplica o filtro passa-baixa de 7Hz citado no artigo [cite: 147]
+        # 2. Executa 5 passos de física (250Hz -> 50Hz) 
+        self.history.append(obs_atual)
+        obs_para_ia = np.array(self.history).flatten()
+        # 3. Calcula a recompensa da Eq. (8) 
+
+        # Condição de término (Terminated)
+        dist = np.linalg.norm(self.data.qpos[:3] - self.data.mocap_pos[0])
+
+        if dist > 3.0:
+            reward -= 10.0 # Punição pesada por sair da linha
+            done = True    # Encerra o episódio
+        else:
+            done = False
+        
+        return obs, reward, terminated, truncated, info
+
+    def reset(self, seed=None):
+        mujoco.mj_resetData(self.model, self.data)
+        # Randomiza a posição inicial para melhorar a robustez 
+        return obs, info
+
+
+
+def save_progress():
+    # Definição de caminhos
+    models_dir = "C:/Users/pedro/Desktop/Ornitos"
+    logdir = "logs"
+
+    # Cria as pastas se elas não existirem
+    if not os.path.exists(models_dir):
+        os.makedirs(models_dir)
+
+    if not os.path.exists(logdir):
+        os.makedirs(logdir)
+
+
+# Modelo MJCF
+xml_model = """
+<mujoco>
+    <option timestep="0.004" gravity="0 0 -9.81" density="1.225" viscosity="0.000018"/> 
+
+    <worldbody>
+
+        <body name="target_visual" mocap="true" pos="0 0 1">
+            <geom type="sphere" size="0.1" rgba="1 0 0 0.5" contype="0" conaffinity="0"/>
+        </body>
+
+        <light diffuse=".5 .5 .5" pos="0 0 3" dir="0 0 -1"/>
+        <geom type="plane" size="10 10 0.1" rgba=".9 .9 .9 1"/>
+        
+        <body name="torso" pos="0 0 1">
+            <freejoint name="root"/> 
+            <geom name="corpo_geom" type="ellipsoid" size="0.1 0.04 0.04" mass="0.15" rgba="0.5 0.5 0.5 1"/>
+            
+            <body name="base_asa_esq" pos="0 0.04 0">
+                <joint name="q1_flap_esq" type="hinge" axis="1 0 0" range="-45 45"/>
+                <geom type="box" size="0.01 0.01 0.01" mass="0.01" rgba="0 0 0 1"/> 
+                <body name="asa_esq_pitch">
+                    <joint name="q2_pitch_esq" type="hinge" axis="0 1 0" range="-30 30"/>
+                    <geom type="ellipsoid" size="0.08 0.45 0.005" pos="0 0.44 0" mass="0.05" rgba="0 .5 .8 1" fluidcoef="0.2 0.12 1.5 3.14 1.0"/>
+                    
+                </body>
+            </body>
+
+            <body name="base_asa_dir" pos="0 -0.04 0">
+                <joint name="q3_flap_dir" type="hinge" axis="1 0 0" range="-45 45"/>
+                <geom type="box" size="0.01 0.01 0.01" mass="0.01" rgba="0 0 0 1"/>
+                <body name="asa_dir_pitch">
+                    <joint name="q4_pitch_dir" type="hinge" axis="0 1 0" range="-30 30"/>
+                    <geom type="ellipsoid" size="0.08 0.45 0.005" pos="0 -0.44 0" mass="0.05" rgba="0 .5 .8 1" fluidcoef="0.2 0.12 1.5 3.14 1.0"/>
+                </body>
+            </body>
+
+            <body name="cauda" pos="-0.1 0 0">
+                <joint name="q5_tail" type="hinge" axis="0 1 0" range="-45 45"/>
+                <geom type="ellipsoid" size="0.08 0.1 0.01" pos="-0.05 0 0" mass="0.04" rgba="0.2 0.2 0.2 1" fluidcoef="0.2 0.12 1.5 3.14 1.0"/>
+            </body>
+        </body>
+    </worldbody>
+
+    <actuator>
+        <position name="motor_q1" joint="q1_flap_esq" kp="10"/>
+        <position name="motor_q2" joint="q2_pitch_esq" kp="5"/>
+        <position name="motor_q3" joint="q3_flap_dir" kp="10"/>
+        <position name="motor_q4" joint="q4_pitch_dir" kp="5"/>
+        <position name="motor_q5" joint="q5_tail" kp="5"/>
+    </actuator>
+</mujoco>
+"""
+
+model = mujoco.MjModel.from_xml_string(xml_model)
+data = mujoco.MjData(model)
+
+with mujoco.viewer.launch_passive(model, data) as viewer:
+    while viewer.is_running():
+        step_start = time.time()
+        
+        # ##### Treinamento circular #####
+        # raio = 5.0
+        # velocidade_angular = 0.5 # rad/s
+        # # Calcula a posição do alvo em um círculo no plano XY
+        # target_x = raio*np.cos(velocidade_angular*data.time)
+        # target_y = raio*np.sin(velocidade_angular*data.time)
+        # target_z = 1.5 # Altitude de 1.5m
+
+        # data.mocap_pos[0] = [target_x, target_y, target_z] # Move o mocap visual
+
+        ##### Treinamento linear #####
+        velocidade_alvo = 3.8 # m/s (velocidade de cruzeiro do artigo)
+        target_x = velocidade_alvo * data.time
+        target_y = 0.0 # Linha reta no eixo X
+        target_z = 5.0 # Altura elevada (ex: 5 metros)
+
+        data.mocap_pos[0] = [target_x, target_y, target_z]
+
+        distancia_erro = np.linalg.norm(data.qpos[:3] - data.mocap_pos[0]) # Lógica de Restart
+
+        if distancia_erro > 3.0:
+            print("Fora da área de missão! Punido e Resetado!")
+            mujoco.mj_resetData(model, data)
+
+        # Teste de batimento (5Hz conforme o artigo) [cite: 224]
+        freq = 5.0 
+        target = 0.4*np.sin(2*np.pi*freq*data.time)
+        target2 = 0.2*np.cos(2*np.pi*freq*data.time)
+        target3 = -0.2*np.sin(2*np.pi*freq*data.time)
+        data.ctrl[0] = target # Flap Esq
+        data.ctrl[1] = target2 # Pitch Esq
+        data.ctrl[2] = -target # Flap Dir
+        data.ctrl[3] = target2 # Pitch Dir
+        data.ctrl[4] = target3 # Tail
+
+        mujoco.mj_step(model, data)
+        viewer.sync()
+        
+        time_until_next_step = model.opt.timestep - (time.time() - step_start)
+        if time_until_next_step > 0:
+            time.sleep(time_until_next_step)
