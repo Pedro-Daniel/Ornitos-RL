@@ -1,3 +1,5 @@
 models/
 logs/
+fracassos/
+sucessos/
 __pycache__/

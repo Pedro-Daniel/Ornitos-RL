@@ -125,14 +125,14 @@ class OrnitoEnv(gym.Env):
                 ctrl_range = self.model.actuator_ctrlrange[a_id] # Retorna [min, max] em radianos
                 
                 # Amplitude física total do motor (ex: max - min)
-                amplitude_rad = ctrl_range[1] - ctrl_range[0]
-                
+                amplitude_rad = np.deg2rad(ctrl_range[1] - ctrl_range[0])
+            
                 # Regra de 3: Converte o limite físico para a escala normalizada da ação
                 deltas[i] = (max_rad_per_step / amplitude_rad) * 2.0
             except:
                 print(f"Erro: Atuador '{nome}' não encontrado no modelo.")
         
-        print("Delta motores calculado")
+        # print(f"Delta motores calculados | {deltas}")
         return deltas
 
     def assign_coefs_to_surfs(self, coefs:list):

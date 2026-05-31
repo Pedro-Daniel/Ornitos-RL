@@ -2,8 +2,10 @@ import os
 import gymnasium as gym
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import CheckpointCallback
-from stable_baselines3.common.logger import configure
 from stable_baselines3.common.callbacks import BaseCallback
+from stable_baselines3.common.logger import configure
+from stable_baselines3.common.vec_env import SubprocVecEnv 
+from stable_baselines3.common.monitor import Monitor
 
 from ambienteOrnitos import OrnitoEnv
 
@@ -25,6 +27,17 @@ def obter_proximo_nome_run(base_name, dir_models, dir_logs):
         contador += 1
     return nome_teste
 
+def criar_ambiente(num_steps):
+    def _init():
+        # Passa os mesmos passos que você já tinha
+        env = OrnitoEnv(num_steps)
+        # IMPORTANTE! NUNCA HABILITE A VISUALIZAÇÃO CASO ESTIVER FAZENDO TREINAMENTO COM MAIS DE UMA INSTÂNCIA! ISSO PROVAVELMENTE VAI TRAVAR O COMPUTADOR! SE FIZER PARE IMEDIATAMENTE!
+        # env.set_render_mode(False)  # Desative a renderização para o treinamento
+        env = Monitor(env)  # Envolve o ambiente com Monitor para registrar estatísticas do episódio
+        env = gym.wrappers.TimeLimit(env, max_episode_steps=5000)
+        return env
+    return _init
+
 # SCRIPT DE TREINAMENTO
 if __name__ == "__main__":
     models_dir = "C:/Users/pedro/Desktop/Ornitos/models"
@@ -38,28 +51,26 @@ if __name__ == "__main__":
     NOTAS_EXPERIMENTO = """
     Objetivo: Consolidar flapeio.
     Mudanças: 
-    - Treinamento sem currículo em rampa.
-    - pos_bonification = 1.0.
-    - lim_area = 15.0
-    - ener = -0.001
-
-    - Física: ck = 3.14 cd_blunt = 0.4. CD_slender travado em 0.01.
-    - Hipótese: O pássaro estava com 'freio de mão' puxado devido à punição de energia.
+    - Após o fracasso do modelo 16, foi necessário aumentar a altura de morte do chão para 1 metro, apenas isso foi alterado do último modelo.
+    - Primeiro treinamento utilizando 6 pássaros simultâneos, usando subprocVecEnv, para tentar acelerar o processo.
+    - Foi criado o repositório do git e foi criada uma nova branch para o experimento com 6 pássaros simultâneos.
+    - Também foi alterada lógica interna do bater de asas para efetuar de forma limitada efetivamente.
+    - No modelo xml foi estabelicido limites físicos PARA OS MOTORES, com ângulos determinados e ctrllimited = True.
     """
+
     # --- CHAVES DE CONTROLE DE TREINAMENTO---
-    CONTINUAR_TREINO = False  # True = Continua o treino de onde parou (na mesma pasta ou em outra), False = Inicia do zero 
-    MESMA_PASTA = False  # False = Transfusão de consciência (zera os steps, nova pasta, mantém o cérebro)
+    CONTINUAR_TREINO = True  # True = Continua o treino de onde parou (na mesma pasta ou em outra), False = Inicia do zero 
+    MESMA_PASTA = True  # False = Transfusão de consciência (zera os steps, nova pasta, mantém o cérebro)
 
     NOME_BASE = "PPO_Voo_Reto_novo" # Nome para a pasta nova, usada se CONTINUAR_TREINO = False.
-    NOME_RUN_ANTIGA = "PPO_Voo_Reto_novo_13" # Nome da pasta do modelo que eu quero continuar treinando (MESMA_PASTA = True) ou fazer a transfusão de consciência (MESMA_PASTA = False).
+    NOME_RUN_ANTIGA = "PPO_Voo_Reto_novo_17" # Nome da pasta do modelo que eu quero continuar treinando (MESMA_PASTA = True) ou fazer a transfusão de consciência (MESMA_PASTA = False).
 
     # Usada apenas quando eu quiser fazer transfusão de consciência.
-    path_do_ultimo_checkpoint = f"{models_dir}/ornito_model_novo_1500000_steps.zip" # Caminho dentro da pasta de modelos com o nome do modelo que eu quero carregar.
+    path_do_ultimo_checkpoint = f"{models_dir}/PPO_Voo_Reto_novo_17/PPO_Voo_Reto_novo_17_3199872_steps.zip" # Caminho dentro da pasta de modelos com o nome do modelo que eu quero carregar.
 
-    # Instancia o Ambiente
-    env = OrnitoEnv(NUM_STEPS)
-    env.set_render_mode(False)  # Ativa a renderização para visualização do treinamento (deixar False para treinar mais rápido)
-    env = gym.wrappers.TimeLimit(env, max_episode_steps=5000)
+    NUM_ENVS = 6 
+    print(f"Iniciando treinamento com {NUM_ENVS} pássaros simultâneos. Agora vai!")
+    env = SubprocVecEnv([criar_ambiente(NUM_STEPS) for _ in range(NUM_ENVS)])
 
     # --- LÓGICA DE INSTANCIAÇÃO DO MODELO ---
     if CONTINUAR_TREINO and os.path.exists(path_do_ultimo_checkpoint):
@@ -126,7 +137,7 @@ if __name__ == "__main__":
 
     # Configura Callback dos logs
     checkpoint_callback = CheckpointCallback(
-        save_freq=100000,
+        save_freq=100000//NUM_ENVS,  # Salva a cada 100k steps (ajustado para o número de ambientes)
         save_path=pasta_checkpoints,
         name_prefix=nome_run_final
     )
