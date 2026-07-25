@@ -80,7 +80,8 @@ class OrnitoEnv(gym.Env):
         self.cd_slender_inicial = 0.01
         self.cd_slender_final = 0.6
 
-        self.assign_coefs_to_surfs([self.cd_blunt_inicial, self.cd_slender_inicial, 1.5, self.ck_final, 1.0, 0, 0, 0, 0, 0, 0, 0])
+        self.assign_coefs_to_surfs([1.5, 0.01, 1.0, 3.14, 1.0, 0, 0, 0, 0, 0, 0, 0])
+        # self.assign_coefs_to_surfs([self.cd_blunt_inicial, self.cd_slender_inicial, 1.5, self.ck_final, 1.0, 0, 0, 0, 0, 0, 0, 0])
 
     def set_global_step(self, step_atual):
         # O Callback chama isso a cada frame apenas para atualizar o número de steps atual

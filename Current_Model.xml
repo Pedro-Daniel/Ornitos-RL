@@ -55,7 +55,7 @@
                     <geom type="cylinder" size="0.005 0.005" mass="0.0001" material="joint_visual" euler="90 0 0"/>
                     
                     <body name="asa_esq">
-                        <geom name="wing_l" type="ellipsoid" pos="0 0.23625 0" size="0.1139 0.2362 0.005" mass="0.020" material="wing_mylar" fluidcoef="0.2 0.12 1.5 3.14 1.0"/>
+                        <geom name="wing_l" type="ellipsoid" pos="0 0.23625 0" size="0.1139 0.2362 0.005" mass="0.020" material="wing_mylar" fluidcoef="1.5 0.01 1.0 3.14 1.0"/>
                     </body>
                 </body>
             </body>
@@ -70,7 +70,7 @@
                     <geom type="cylinder" size="0.005 0.005" mass="0.0001" material="joint_visual" euler="90 0 0"/>
                     
                     <body name="asa_dir">
-                        <geom name="wing_r" type="ellipsoid" pos="0 -0.23625 0" size="0.1139 0.2362 0.005" mass="0.020" material="wing_mylar" fluidcoef="0.2 0.12 1.5 3.14 1.0"/>
+                        <geom name="wing_r" type="ellipsoid" pos="0 -0.23625 0" size="0.1139 0.2362 0.005" mass="0.020" material="wing_mylar" fluidcoef="1.5 0.01 1.0 3.14 1.0"/>
                     </body>
                 </body>
             </body>
@@ -81,7 +81,7 @@
                 <geom type="cylinder" size="0.005 0.005" mass="0.0001" material="joint_visual" euler="90 0 0"/>
                 
                 <body name="cauda">
-                    <geom name="tail_geom" type="ellipsoid" pos="-0.11333 0 0" size="0.1133 0.17 0.005" mass="0.009" material="wing_mylar" fluidcoef="0.2 0.12 1.5 3.14 1.0"/>
+                    <geom name="tail_geom" type="ellipsoid" pos="-0.11333 0 0" size="0.1133 0.17 0.005" mass="0.009" material="wing_mylar" fluidcoef="1.5 0.01 1.0 3.14 1.0"/>
                 </body>
             </body>
         </body>
