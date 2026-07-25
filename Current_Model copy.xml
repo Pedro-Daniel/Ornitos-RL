@@ -22,6 +22,11 @@
             <geom type="sphere" size="0.1" rgba="1 0 0 0.5" contype="0" conaffinity="0"/>
         </body>
 
+        <!-- PEDRA MOCKUP -->
+        <body name="pedra_mockup" mocap="true" pos="0 0 12">
+            <geom type="sphere" size="0.08" rgba="0.6 0.4 0.2 1" contype="0" conaffinity="0"/>
+        </body>
+
         <!-- CORPO PRINCIPAL -->
         <body name="torso" pos="0 0 12">
             <freejoint name="root"/>

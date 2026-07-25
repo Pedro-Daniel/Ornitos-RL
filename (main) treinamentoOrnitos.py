@@ -4,7 +4,7 @@ from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import CheckpointCallback
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.logger import configure
-from stable_baselines3.common.vec_env import SubprocVecEnv 
+from stable_baselines3.common.vec_env import SubprocVecEnv
 from stable_baselines3.common.monitor import Monitor
 
 from ambienteOrnitos import OrnitoEnv
@@ -49,18 +49,14 @@ if __name__ == "__main__":
 
 # --- ANOTAÇÕES DO EXPERIMENTO ---
     NOTAS_EXPERIMENTO = """
-    Objetivo: Consolidar flapeio.
-    Mudanças: 
-    - Após o fracasso do modelo 16, foi necessário aumentar a altura de morte do chão para 1 metro, apenas isso foi alterado do último modelo.
-    - Primeiro treinamento utilizando 6 pássaros simultâneos, usando subprocVecEnv, para tentar acelerar o processo.
-    - Foi criado o repositório do git e foi criada uma nova branch para o experimento com 6 pássaros simultâneos.
-    - Também foi alterada lógica interna do bater de asas para efetuar de forma limitada efetivamente.
-    - No modelo xml foi estabelicido limites físicos PARA OS MOTORES, com ângulos determinados e ctrllimited = True.
+    Objetivo: Consolidar flapeio (Despertar do Ornitóptero - Ref: Artigo Berkeley).
+    Mudanças:
+    - Só um teste pro Geovany
     """
 
     # --- CHAVES DE CONTROLE DE TREINAMENTO---
-    CONTINUAR_TREINO = True  # True = Continua o treino de onde parou (na mesma pasta ou em outra), False = Inicia do zero 
-    MESMA_PASTA = True  # False = Transfusão de consciência (zera os steps, nova pasta, mantém o cérebro)
+    CONTINUAR_TREINO = False  # True = Continua o treino de onde parou (na mesma pasta ou em outra), False = Inicia do zero 
+    MESMA_PASTA = False  # False = Transfusão de consciência (zera os steps, nova pasta, mantém o cérebro)
 
     NOME_BASE = "PPO_Voo_Reto_novo" # Nome para a pasta nova, usada se CONTINUAR_TREINO = False.
     NOME_RUN_ANTIGA = "PPO_Voo_Reto_novo_17" # Nome da pasta do modelo que eu quero continuar treinando (MESMA_PASTA = True) ou fazer a transfusão de consciência (MESMA_PASTA = False).

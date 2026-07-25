@@ -12,8 +12,8 @@ TAXA_CAUDA = 1.5     # Velocidade de resposta da cauda
 xml_path = "Current_Model copy.xml"
 keys_pressed = set()
 # ctrl_cauda = 0.645 #Trimado 4Hz
-# ctrl_cauda = 0.55 #Trimado 5Hz
-ctrl_cauda = 0.0
+ctrl_cauda = 0.55 #Trimado 5Hz
+# ctrl_cauda = 0.0
 
 def on_press(key):
     try:

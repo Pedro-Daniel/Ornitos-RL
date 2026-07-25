@@ -116,7 +116,7 @@ class OrnitoEnv(gym.Env):
         motores = ['motor_q1', 'motor_q2', 'motor_q3', 'motor_q4', 'motor_q5']
         deltas = np.zeros(5)
         
-        v_max_rad_s = np.deg2rad(600) # Converte 600 graus/s para rad/s
+        v_max_rad_s = np.deg2rad(1800) # Converte 1800 graus/s para rad/s (triplicado)
         max_rad_per_step = v_max_rad_s*self.dt_ia
 
         for i, nome in enumerate(motores):
@@ -196,6 +196,11 @@ class OrnitoEnv(gym.Env):
 
             # Atualiza alvo no MuJoCo para visualização
             self.data.mocap_pos[0] = [self.vel_target * self.data.time, 0.0, 12.0]
+            
+            # Atualiza a pedra mockup (queda livre simulada)
+            z_pedra = max(1.0, 12.0 - 0.5 * 9.81 * (self.data.time**2))
+            self.data.mocap_pos[1] = [self.vel_target * self.data.time, 0.0, z_pedra]
+            
             mujoco.mj_step(self.model, self.data)
 
             if np.any(np.abs(self.data.qvel) > 150) or np.any(np.isnan(self.data.qpos)):
@@ -214,11 +219,18 @@ class OrnitoEnv(gym.Env):
         obs = self._get_obs()
         reward = self._compute_reward(target_action)
         
-        lim_area = 12.0
+        lim_area = 3.0
 
         dist = np.linalg.norm(self.data.qpos[:3] - self.data.mocap_pos[0])
         bateu_no_chao = self.data.qpos[2] < 1.0
-        terminated = bool(dist > lim_area or bateu_no_chao) # Fora da área
+        
+        # Punição por atitude extrema (> 90 graus em roll ou pitch)
+        mat = self.data.body('torso').xmat.reshape(3, 3)
+        pitch = np.arcsin(np.clip(-mat[2, 0], -1.0, 1.0))
+        roll = np.arctan2(mat[2, 1], mat[2, 2])
+        atitude_extrema = bool(abs(pitch) > 1.57 or abs(roll) > 1.57)
+        
+        terminated = bool(dist > lim_area or bateu_no_chao or atitude_extrema) # Fora da área ou capotou
 
         if terminated:
             reward -= 30.0 # Punição fixa por morte

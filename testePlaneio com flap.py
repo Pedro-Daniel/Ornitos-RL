@@ -71,14 +71,14 @@ def test_flapping_flight(v_initial):
         while viewer.is_running() and data.qpos[2] > 0.3:
             step_start = time.time()
             
-            # 1. CÁLCULO DA SENOIDE (Flapping)
+            # SENOIDE DO FLAPPING
             # q(t) = A * sin(2 * pi * f * t)
             sinal_asa = AMPLITUDE * np.sin(2 * np.pi * FREQUENCIA * data.time)
             
             data.ctrl[f_esq] = -sinal_asa
-            data.ctrl[f_dir] = sinal_asa # Asas batem em fase
+            data.ctrl[f_dir] = sinal_asa # Asas batem em fases opostas
             
-            # 2. CONTROLE MANUAL DA CAUDA (W/S)
+            # CONTROLE DA CAUDA PELAS TECLAS (W/S)
             if 'w' in keys_pressed: ctrl_cauda += TAXA_CAUDA * model.opt.timestep
             if 's' in keys_pressed: ctrl_cauda -= TAXA_CAUDA * model.opt.timestep
             ctrl_cauda = np.clip(ctrl_cauda, -1.0, 1.0)
@@ -88,7 +88,7 @@ def test_flapping_flight(v_initial):
             
             # 3. PITCH CORRIGIDO (Positivo = Nariz para Cima)
             mat = data.body('torso').xmat.reshape(3, 3)
-            pitch = np.degrees(np.arcsin(mat[2, 0])) # Inverti o sinal aqui
+            pitch = np.degrees(np.arcsin(mat[2, 0]))
             
             if int(data.time * 100) % 50 == 0:
                 print(f"T: {data.time:.1f}s | Alt: {data.qpos[2]:.2f}m | Dist: {data.qpos[0]:.2f}m | VelX: {data.qvel[0]:.1f}m/s | Pitch: {pitch:.1f}° | Cntrl Cauda: {ctrl_cauda:.3f}")
