@@ -15,7 +15,7 @@ xml_model = """
     
     <statistic center="0 0 12" extent="2"/>
     
-    <option timestep="0.002" integrator="RK4" gravity="0 0 -9.81" density="1.225" viscosity="0.000018">
+    <option timestep="0.0015" integrator="RK4" gravity="0 0 -9.81" density="1.225" viscosity="0.000018">
         <flag energy="enable"/>
     </option>
 
@@ -37,9 +37,9 @@ xml_model = """
         <!-- CORPO PRINCIPAL -->
         <body name="torso" pos="0 0 12">
             <freejoint name="root"/>
-            
+
             <!-- Fuselagem Principal (GeoGebra): 255g total, motores inclusos aqui -->
-            <geom name="fuselagem" type="ellipsoid" pos="0.12995 0 0" size="0.1565 0.035 0.028" mass="0.210" material="carbon_fiber"/>
+            <geom name="fuselagem" type="ellipsoid" fluidshape="ellipsoid" pos="0.12995 0 0" size="0.1565 0.035 0.028" mass="0.210" material="carbon_fiber"/>
 
             <!-- Massas dos Motores (9g cada) posicionadas internamente para ajuste de CG -->
             <geom name="m_flap_l_mass" type="sphere" pos="0.09 0.02 0" size="0.01" mass="0.009" material="motor_internal"/>
@@ -62,7 +62,7 @@ xml_model = """
                     <geom type="cylinder" size="0.005 0.005" mass="0.0001" material="joint_visual" euler="90 0 0"/>
                     
                     <body name="asa_esq">
-                        <geom name="wing_l" type="ellipsoid" pos="0 0.23625 0" size="0.1139 0.2362 0.005" mass="0.020" material="wing_mylar" fluidcoef="0.2 0.12 1.5 3.14 1.0"/>
+                        <geom name="wing_l" type="ellipsoid" fluidshape="ellipsoid" pos="0 0.23625 0" size="0.1139 0.2362 0.005" mass="0.020" material="wing_mylar" fluidcoef="1.5 0.01 1.0 3.14 1.0"/>
                     </body>
                 </body>
             </body>
@@ -77,7 +77,7 @@ xml_model = """
                     <geom type="cylinder" size="0.005 0.005" mass="0.0001" material="joint_visual" euler="90 0 0"/>
                     
                     <body name="asa_dir">
-                        <geom name="wing_r" type="ellipsoid" pos="0 -0.23625 0" size="0.1139 0.2362 0.005" mass="0.020" material="wing_mylar" fluidcoef="0.2 0.12 1.5 3.14 1.0"/>
+                        <geom name="wing_r" type="ellipsoid" fluidshape="ellipsoid" pos="0 -0.23625 0" size="0.1139 0.2362 0.005" mass="0.020" material="wing_mylar" fluidcoef="1.5 0.01 1.0 3.14 1.0"/>
                     </body>
                 </body>
             </body>
@@ -88,18 +88,18 @@ xml_model = """
                 <geom type="cylinder" size="0.005 0.005" mass="0.0001" material="joint_visual" euler="90 0 0"/>
                 
                 <body name="cauda">
-                    <geom name="tail_geom" type="ellipsoid" pos="-0.11333 0 0" size="0.1133 0.17 0.005" mass="0.009" material="wing_mylar" fluidcoef="0.2 0.12 1.5 3.14 1.0"/>
+                    <geom name="tail_geom" type="ellipsoid" fluidshape="ellipsoid" pos="-0.11333 0 0" size="0.1133 0.17 0.005" mass="0.009" material="wing_mylar" fluidcoef="1.5 0.01 1.0 3.14 1.0"/>
                 </body>
             </body>
         </body>
     </worldbody>
 
     <actuator>
-        <position name="motor_q1" joint="q1_flap_esq" kp="10"/>
-        <position name="motor_q2" joint="q2_pitch_esq" kp="5"/>
-        <position name="motor_q3" joint="q3_flap_dir" kp="10"/>
-        <position name="motor_q4" joint="q4_pitch_dir" kp="5"/>
-        <position name="motor_q5" joint="q5_pitch_tail" kp="5"/>
+        <position name="motor_q1" joint="q1_flap_esq" kp="10" ctrllimited="true" ctrlrange="-45 45"/>
+        <position name="motor_q2" joint="q2_pitch_esq" kp="5" ctrllimited="true" ctrlrange="-25 25"/>
+        <position name="motor_q3" joint="q3_flap_dir" kp="10" ctrllimited="true" ctrlrange="-45 45"/>
+        <position name="motor_q4" joint="q4_pitch_dir" kp="5" ctrllimited="true" ctrlrange="-25 25"/>
+        <position name="motor_q5" joint="q5_pitch_tail" kp="5" ctrllimited="true" ctrlrange="-35 35"/>
     </actuator>
 </mujoco>
 """
@@ -174,6 +174,9 @@ class OrnitoEnv(gym.Env):
             if self.render_mode and self.viewer.is_running():
                 self.viewer.sync()
                 time.sleep(0.002)
+        
+        geom_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, 'wing_l')
+        print(f"Coeficientes do fluido da asa: {self.model.geom_fluid[geom_id]}")
 
         # 4. Cálculos de Fim de Step
         obs = self._get_obs()
@@ -182,7 +185,7 @@ class OrnitoEnv(gym.Env):
         reward += 1 - 1*((self.data.qpos[2] - 12)**2)/4 ### FORÇAR ALTITUDE NIVELADA
         reward += 1 - 1*((self.data.qpos[1] - 0)**2)/4 ### FORÇAR ESTABILIDADE LATERAL
         
-        lim_area = 10.0
+        lim_area = 3.0
 
         dist = np.linalg.norm(self.data.qpos[:3] - self.data.mocap_pos[0])
         terminated = bool(dist > lim_area) # Fora da área
@@ -278,7 +281,6 @@ if __name__ == "__main__":
 #     print("Cérebro carregado! Continuando o treino...")
 # else:
 #     model = PPO("MlpPolicy", env, ...) # Cria do zero se não achar o arquivo
-
 
 
 # cd C:/Users/pedro/Desktop/Ornitos

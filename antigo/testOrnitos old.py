@@ -10,60 +10,96 @@ from stable_baselines3 import PPO
 
 # DEFINIÇÃO DO MODELO XML
 xml_model = """
-<mujoco>
-    <statistic center="0 0 12"/>
-    <option timestep="0.002" integrator="RK4" gravity="0 0 -9.81" density="1.225" viscosity="0.000018"/> 
+<mujoco model="Ornithopter_UnB_Final">
+    <compiler angle="degree" coordinate="local" inertiafromgeom="true"/>
+    
+    <statistic center="0 0 12" extent="2"/>
+    
+    <option timestep="0.0015" integrator="RK4" gravity="0 0 -9.81" density="1.225" viscosity="0.000018">
+        <flag energy="enable"/>
+    </option>
+
+    <asset>
+        <material name="carbon_fiber" rgba="0.1 0.1 0.1 0.4"/>
+        <material name="wing_mylar" rgba="0 0.5 0.8 0.6"/>
+        <material name="joint_visual" rgba="1 0 0 1"/>
+        <material name="motor_internal" rgba="0.5 0 0 1"/>
+    </asset>
+
     <worldbody>
+        <light diffuse=".5 .5 .5" pos="0 0 3" dir="0 0 -1"/>
+        <geom type="plane" size="100 100 0.1" rgba=".9 .9 .9 1"/>
+
         <body name="target" mocap="true" pos="0 0 12">
             <geom type="sphere" size="0.1" rgba="1 0 0 0.5" contype="0" conaffinity="0"/>
         </body>
-        <light diffuse=".5 .5 .5" pos="0 0 3" dir="0 0 -1"/>
-        <geom type="plane" size="100 100 0.1" rgba=".9 .9 .9 1"/>
-        
+
+        <!-- CORPO PRINCIPAL -->
         <body name="torso" pos="0 0 12">
-            <freejoint name="root"/> 
-            <geom name="fuselagem" type="ellipsoid" size="0.4 0.04 0.04" mass="0.15" rgba="0.5 0.5 0.5 1"/>
+            <freejoint name="root"/>
 
-            <body name="asa_esq_flap" pos="0.1 0.04 0">
+            <!-- Fuselagem Principal (GeoGebra): 255g total, motores inclusos aqui -->
+            <geom name="fuselagem" type="ellipsoid" fluidshape="ellipsoid" pos="0.12995 0 0" size="0.1565 0.035 0.028" mass="0.210" material="carbon_fiber"/>
+
+            <!-- Massas dos Motores (9g cada) posicionadas internamente para ajuste de CG -->
+            <geom name="m_flap_l_mass" type="sphere" pos="0.09 0.02 0" size="0.01" mass="0.009" material="motor_internal"/>
+            <geom name="m_flap_r_mass" type="sphere" pos="0.09 -0.02 0" size="0.01" mass="0.009" material="motor_internal"/>
+            <geom name="m_pitch_l_mass" type="sphere" pos="0.06 0.02 0" size="0.01" mass="0.009" material="motor_internal"/>
+            <geom name="m_pitch_r_mass" type="sphere" pos="0.06 -0.02 0" size="0.01" mass="0.009" material="motor_internal"/>
+            <geom name="m_tail_mass" type="sphere" pos="0.03 0 0" size="0.01" mass="0.009" material="motor_internal"/>
+
+            <!-- Tubo de Cauda (4g) -->
+            <geom name="tail_tube" type="cylinder" fromto="-0.02197 0 0 -0.37657 0 0" size="0.006" mass="0.004" material="carbon_fiber"/>
+
+            <!-- ASA ESQUERDA -->
+            <body name="asa_esq_flap" pos="0 0.01951 0">
                 <joint name="q1_flap_esq" type="hinge" axis="1 0 0" range="-45 45" damping="0.1"/>
-                <geom type="cylinder" size="0.01 0.01 0.01" mass="0.01" rgba="1 0 0 1"/> 
-                <body name="asa_esq_pitch" pos="0 0.02 0">
+                <!-- Cilindro de placeholder para satisfazer mjMINVAL -->
+                <geom type="cylinder" size="0.005 0.005" mass="0.0001" material="joint_visual"/>
+                
+                <body name="asa_esq_pitch" pos="0 0.00249 0">
                     <joint name="q2_pitch_esq" type="hinge" axis="0 1 0" range="-25 25" damping="0.05"/>
-                    <geom type="cylinder" size="0.01 0.01 0.01" mass="0.01" rgba="0 1 0 1"/>
-                    <body name="asa_esq" pos="0 0.06 0">
-                        <geom type="ellipsoid" size="0.1 0.5 0.005" pos="0 0.44 0" mass="0.05" rgba="0 .5 .8 1" fluidcoef="0.2 0.12 1.5 3.14 1.0"/>
+                    <geom type="cylinder" size="0.005 0.005" mass="0.0001" material="joint_visual" euler="90 0 0"/>
+                    
+                    <body name="asa_esq">
+                        <geom name="wing_l" type="ellipsoid" fluidshape="ellipsoid" pos="0 0.23625 0" size="0.1139 0.2362 0.005" mass="0.020" material="wing_mylar" fluidcoef="1.5 0.01 1.0 3.14 1.0"/>
                     </body>
                 </body>
             </body>
 
-            <body name="asa_dir_flap" pos="0.1 -0.04 0">
+            <!-- ASA DIREITA -->
+            <body name="asa_dir_flap" pos="0 -0.01951 0">
                 <joint name="q3_flap_dir" type="hinge" axis="1 0 0" range="-45 45" damping="0.1"/>
-                <geom type="cylinder" size="0.01 0.01 0.01" mass="0.01" rgba="1 0 0 1"/>
-                <body name="asa_dir_pitch" pos="0 -0.02 0">
+                <geom type="cylinder" size="0.005 0.005" mass="0.0001" material="joint_visual"/>
+                
+                <body name="asa_dir_pitch" pos="0 -0.00249 0">
                     <joint name="q4_pitch_dir" type="hinge" axis="0 1 0" range="-25 25" damping="0.05"/>
-                    <geom type="cylinder" size="0.01 0.01 0.01" mass="0.01" rgba="0 1 0 1"/>
-                    <body name="asa_dir" pos="0 -0.06 0">
-                        <geom type="ellipsoid" size="0.1 0.5 0.005" pos="0 -0.44 0" mass="0.05" rgba="0 .5 .8 1" fluidcoef="0.2 0.12 1.5 3.14 1.0"/>
+                    <geom type="cylinder" size="0.005 0.005" mass="0.0001" material="joint_visual" euler="90 0 0"/>
+                    
+                    <body name="asa_dir">
+                        <geom name="wing_r" type="ellipsoid" fluidshape="ellipsoid" pos="0 -0.23625 0" size="0.1139 0.2362 0.005" mass="0.020" material="wing_mylar" fluidcoef="1.5 0.01 1.0 3.14 1.0"/>
                     </body>
                 </body>
             </body>
 
-            <body name="cauda_pitch" pos="-0.4 0 0">
+            <!-- CAUDA -->
+            <body name="cauda_pitch" pos="-0.37657 0 0">
                 <joint name="q5_pitch_tail" type="hinge" axis="0 1 0" range="-35 35" damping="0.1"/>
-                <geom type="cylinder" size="0.01 0.01 0.01" mass="0.01" rgba="0 0 1 1"/>
+                <geom type="cylinder" size="0.005 0.005" mass="0.0001" material="joint_visual" euler="90 0 0"/>
+                
                 <body name="cauda">
-                    <geom type="ellipsoid" size="0.1 0.15 0.01" pos="-0.1 0 0" mass="0.04" rgba="0.2 0.2 0.2 1" fluidcoef="0.2 0.12 1.5 3.14 1.0"/>
+                    <geom name="tail_geom" type="ellipsoid" fluidshape="ellipsoid" pos="-0.11333 0 0" size="0.1133 0.17 0.005" mass="0.009" material="wing_mylar" fluidcoef="1.5 0.01 1.0 3.14 1.0"/>
                 </body>
             </body>
         </body>
     </worldbody>
 
     <actuator>
-        <position name="motor_q1" joint="q1_flap_esq" kp="10"/>
-        <position name="motor_q2" joint="q2_pitch_esq" kp="5"/>
-        <position name="motor_q3" joint="q3_flap_dir" kp="10"/>
-        <position name="motor_q4" joint="q4_pitch_dir" kp="5"/>
-        <position name="motor_q5" joint="q5_pitch_tail" kp="5"/>
+        <position name="motor_q1" joint="q1_flap_esq" kp="10" ctrllimited="true" ctrlrange="-45 45"/>
+        <position name="motor_q2" joint="q2_pitch_esq" kp="5" ctrllimited="true" ctrlrange="-25 25"/>
+        <position name="motor_q3" joint="q3_flap_dir" kp="10" ctrllimited="true" ctrlrange="-45 45"/>
+        <position name="motor_q4" joint="q4_pitch_dir" kp="5" ctrllimited="true" ctrlrange="-25 25"/>
+        <position name="motor_q5" joint="q5_pitch_tail" kp="5" ctrllimited="true" ctrlrange="-35 35"/>
     </actuator>
 </mujoco>
 """
@@ -79,7 +115,7 @@ class OrnitoEnv(gym.Env):
         self.action_space = spaces.Box(low=-1, high=1, shape=(5,), dtype=np.float32)
         
         # Observação: (13 sensores atuais * 25 frames histórico) + (30 pontos futuro * 3 coords) = 415
-        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(415,), dtype=np.float32)
+        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(540,), dtype=np.float32)
 
         # Filtro e Frequências
         self.dt_ia = 0.02
@@ -98,12 +134,12 @@ class OrnitoEnv(gym.Env):
 
     def _get_obs(self):
 
-        # Sensores Atuais (13)
+# Sensores Atuais (13) + Ações Anteriores (5)
         eta = self.data.qpos[3:7]  # Quatérnio
         pqr = self.data.qvel[3:6]  # Vel Angular
         qj = self.data.qpos[7:12]  # Juntas
         vx = np.array([self.data.qvel[0]]) # Pitot
-        current_obs = np.concatenate([eta, pqr, qj, vx])
+        current_obs = np.concatenate([eta, pqr, qj, vx, self.last_action])
         
         self.history.append(current_obs)
         
@@ -173,7 +209,7 @@ class OrnitoEnv(gym.Env):
         self.history.clear()
 
         lim_hist = 25
-        num_sensors= 13 
+        num_sensors= 18
 
         # Preencher com zeros se o histórico ainda não estiver cheio
         while len(self.history) < lim_hist:
@@ -191,7 +227,7 @@ env = OrnitoEnv()
 env = gym.wrappers.TimeLimit(env, max_episode_steps=5000)
 
 # Carregar o modelo treinado
-model_path = "C:/Users/pedro/Desktop/Ornitos/sucessos/Modelo_Antigo/final_model_ornito4.zip"
+model_path = "C:/Users/pedro/Desktop/Ornitos/models/ornito_model_2000000_steps.zip"
 model = PPO.load(model_path, env=env, learning_rate=3e-4)
 
 # Visualização apenas, sem treino

@@ -45,28 +45,27 @@ if __name__ == "__main__":
     os.makedirs(models_dir, exist_ok=True)
     os.makedirs(logdir, exist_ok=True)
 
-    NUM_STEPS = 6e6 # Total de steps para o treinamento
+    NUM_STEPS = 4e6 # Total de steps para o treinamento
+
+    LEARN_RATE = 1e-5
 
 # --- ANOTAÇÕES DO EXPERIMENTO ---
     NOTAS_EXPERIMENTO = """
-    Objetivo: Consolidar flapeio.
+    Objetivo: MELHORAR flapeio.
     Mudanças: 
-    - Após o fracasso do modelo 16, foi necessário aumentar a altura de morte do chão para 1 metro, apenas isso foi alterado do último modelo.
-    - Primeiro treinamento utilizando 6 pássaros simultâneos, usando subprocVecEnv, para tentar acelerar o processo.
-    - Foi criado o repositório do git e foi criada uma nova branch para o experimento com 6 pássaros simultâneos.
-    - Também foi alterada lógica interna do bater de asas para efetuar de forma limitada efetivamente.
-    - No modelo xml foi estabelicido limites físicos PARA OS MOTORES, com ângulos determinados e ctrllimited = True.
+    - Mesmos parâmetros do voo N°23*, mas agora com 4 milhões de steps e mantendo a learning rate em 1e-5.
+    - Transfusão de consciência do melhor caso do modelo N°23.
     """
 
     # --- CHAVES DE CONTROLE DE TREINAMENTO---
     CONTINUAR_TREINO = True  # True = Continua o treino de onde parou (na mesma pasta ou em outra), False = Inicia do zero 
-    MESMA_PASTA = True  # False = Transfusão de consciência (zera os steps, nova pasta, mantém o cérebro)
+    MESMA_PASTA = False  # False = Transfusão de consciência (zera os steps, nova pasta, mantém o cérebro)
 
     NOME_BASE = "PPO_Voo_Reto_novo" # Nome para a pasta nova, usada se CONTINUAR_TREINO = False.
-    NOME_RUN_ANTIGA = "PPO_Voo_Reto_novo_17" # Nome da pasta do modelo que eu quero continuar treinando (MESMA_PASTA = True) ou fazer a transfusão de consciência (MESMA_PASTA = False).
+    NOME_RUN_ANTIGA = "PPO_Voo_Reto_novo_23" # Nome da pasta do modelo que eu quero continuar treinando (MESMA_PASTA = True) ou fazer a transfusão de consciência (MESMA_PASTA = False).
 
     # Usada apenas quando eu quiser fazer transfusão de consciência.
-    path_do_ultimo_checkpoint = f"{models_dir}/PPO_Voo_Reto_novo_17/PPO_Voo_Reto_novo_17_3199872_steps.zip" # Caminho dentro da pasta de modelos com o nome do modelo que eu quero carregar.
+    path_do_ultimo_checkpoint = f"{models_dir}/PPO_Voo_Reto_novo_23/PPO_Voo_Reto_novo_23_4199832_steps.zip" # Caminho dentro da pasta de modelos com o nome do modelo que eu quero carregar.
 
     NUM_ENVS = 6 
     print(f"Iniciando treinamento com {NUM_ENVS} pássaros simultâneos. Agora vai!")
@@ -77,14 +76,14 @@ if __name__ == "__main__":
         
         if MESMA_PASTA:
             print(f"Cérebro carregado! Continuando o treino na MESMA pasta ({NOME_RUN_ANTIGA})...")
-            model = PPO.load(path_do_ultimo_checkpoint, env=env, learning_rate=3e-4)
+            model = PPO.load(path_do_ultimo_checkpoint, env=env, learning_rate=LEARN_RATE)
             reset_timesteps = False
             nome_run_final = NOME_RUN_ANTIGA
             
         else:
             print(f"Transfusão de Consciência! Cérebro carregado. Iniciando NOVA pasta ({NOME_BASE}) e zerando os steps...")
             # Carrega os pesos, mas define o diretório de log para ele criar a nova run
-            model = PPO.load(path_do_ultimo_checkpoint, env=env, tensorboard_log=logdir, learning_rate=3e-4)
+            model = PPO.load(path_do_ultimo_checkpoint, env=env, tensorboard_log=logdir, learning_rate=LEARN_RATE)
             reset_timesteps = True
             nome_run_final = obter_proximo_nome_run(NOME_BASE, models_dir, logdir)
             print(f"--> Auto-incremento detectou nova run. Usando o nome: {nome_run_final}")
@@ -103,7 +102,7 @@ if __name__ == "__main__":
             env,
             policy_kwargs=size_rede,
             verbose=1,
-            learning_rate=3e-4,
+            learning_rate=LEARN_RATE,
             n_steps=2048,
             batch_size=64
         )

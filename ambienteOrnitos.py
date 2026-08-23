@@ -59,16 +59,16 @@ class OrnitoEnv(gym.Env):
         self.bonus_sobrevivencia = 0.0
 
         # Velocidade da aeronave no começo do episódio
-        self.vel_inicial = self.vel_target
-        self.vel_final = self.vel_target/2.0
+        self.vel_inicial = self.vel_target/4.0
+        self.vel_final = self.vel_target
         self.vel_atual = self.vel_inicial
 
         # Penalidade de energia, para incentivar comportamentos mais frenéticos no começo e mais econômicos no final
         self.ener_inicial = -0.001
         self.ener_final = -0.05
-        self.energia_atual = self.ener_inicial
+        self.energia_atual = self.ener_final
 
-        self.pos_bonification = 1.0 # 0.5 no artigo
+        self.pos_bonification = 0.5 # 0.5 no artigo
 
         # Kutta Lift: Começa super alto (8.0) e termina no valor real do artigo (3.14) 
         self.ck_inicial = 8.0
@@ -80,7 +80,7 @@ class OrnitoEnv(gym.Env):
         self.cd_slender_inicial = 0.01
         self.cd_slender_final = 0.6
 
-        self.assign_coefs_to_surfs([self.cd_blunt_inicial, self.cd_slender_inicial, 1.5, self.ck_final, 1.0, 0, 0, 0, 0, 0, 0, 0])
+        # self.assign_coefs_to_surfs([self.cd_blunt_inicial, self.cd_slender_inicial, 1.5, self.ck_final, 1.0, 0, 0, 0, 0, 0, 0, 0])
 
     def set_global_step(self, step_atual):
         # O Callback chama isso a cada frame apenas para atualizar o número de steps atual
@@ -106,7 +106,7 @@ class OrnitoEnv(gym.Env):
             cd_blunt_atual = self.cd_blunt_inicial + alfa * (self.cd_blunt_final - self.cd_blunt_inicial)
             cd_slender_atual = self.cd_slender_inicial + alfa * (self.cd_slender_final - self.cd_slender_inicial)
 
-            self.assign_coefs_to_surfs([cd_blunt_atual, cd_slender_atual, 1.5, self.ck_final, 1.0, 0, 0, 0, 0, 0, 0, 0])
+            # self.assign_coefs_to_surfs([cd_blunt_atual, cd_slender_atual, 1.5, self.ck_final, 1.0, 0, 0, 0, 0, 0, 0, 0])
 
             # if self.global_step % 50_000 == 0:
             #     print(f"[CURRÍCULO] Passo: {self.global_step} | Gravidade Z: {self.model.opt.gravity[2]:.2f} | C_K: {ck_atual:.2f} | Velocidade Inicial: {self.vel_atual:.2f} | Penalt Energia: {self.energia_atual:.5f}")
@@ -116,7 +116,7 @@ class OrnitoEnv(gym.Env):
         motores = ['motor_q1', 'motor_q2', 'motor_q3', 'motor_q4', 'motor_q5']
         deltas = np.zeros(5)
         
-        v_max_rad_s = np.deg2rad(600) # Converte 600 graus/s para rad/s
+        v_max_rad_s = np.deg2rad(2400) # Converte 600*4 graus/s para rad/s
         max_rad_per_step = v_max_rad_s*self.dt_ia
 
         for i, nome in enumerate(motores):
@@ -209,12 +209,12 @@ class OrnitoEnv(gym.Env):
                 self.viewer.sync()
                 self.viewer.cam.lookat = self.data.body('torso').xpos
                 self.viewer.cam.distance = 5.0
-                time.sleep(0.002 * 5)
+                time.sleep(0.002 * 2.5)
 
         obs = self._get_obs()
         reward = self._compute_reward(target_action)
         
-        lim_area = 12.0
+        lim_area = 3.0
 
         dist = np.linalg.norm(self.data.qpos[:3] - self.data.mocap_pos[0])
         bateu_no_chao = self.data.qpos[2] < 1.0
