@@ -62,7 +62,7 @@ xml_model = """
                     <geom type="cylinder" size="0.005 0.005" mass="0.0001" material="joint_visual" euler="90 0 0"/>
                     
                     <body name="asa_esq">
-                        <geom name="wing_l" type="ellipsoid" fluidshape="ellipsoid" pos="0 0.23625 0" size="0.1139 0.2362 0.005" mass="0.020" material="wing_mylar" fluidcoef="1.5 0.01 1.0 3.14 1.0"/>
+                        <geom name="wing_l" type="ellipsoid" fluidshape="ellipsoid" pos="0 0.23625 0" size="0.1139 0.2362 0.005" mass="0.020" material="wing_mylar" fluidcoef="0.2 0.12 1.5 3.14 1.0"/>
                     </body>
                 </body>
             </body>
@@ -77,7 +77,7 @@ xml_model = """
                     <geom type="cylinder" size="0.005 0.005" mass="0.0001" material="joint_visual" euler="90 0 0"/>
                     
                     <body name="asa_dir">
-                        <geom name="wing_r" type="ellipsoid" fluidshape="ellipsoid" pos="0 -0.23625 0" size="0.1139 0.2362 0.005" mass="0.020" material="wing_mylar" fluidcoef="1.5 0.01 1.0 3.14 1.0"/>
+                        <geom name="wing_r" type="ellipsoid" fluidshape="ellipsoid" pos="0 -0.23625 0" size="0.1139 0.2362 0.005" mass="0.020" material="wing_mylar" fluidcoef="0.2 0.12 1.5 3.14 1.0"/>
                     </body>
                 </body>
             </body>
@@ -88,7 +88,7 @@ xml_model = """
                 <geom type="cylinder" size="0.005 0.005" mass="0.0001" material="joint_visual" euler="90 0 0"/>
                 
                 <body name="cauda">
-                    <geom name="tail_geom" type="ellipsoid" fluidshape="ellipsoid" pos="-0.11333 0 0" size="0.1133 0.17 0.005" mass="0.009" material="wing_mylar" fluidcoef="1.5 0.01 1.0 3.14 1.0"/>
+                    <geom name="tail_geom" type="ellipsoid" fluidshape="ellipsoid" pos="-0.11333 0 0" size="0.1133 0.17 0.005" mass="0.009" material="wing_mylar" fluidcoef="0.2 0.12 1.5 3.14 1.0"/>
                 </body>
             </body>
         </body>
@@ -209,11 +209,11 @@ class OrnitoEnv(gym.Env):
         self.history.clear()
 
         lim_hist = 25
-        num_sensors= 18
+        num_sensors = 18 #13 sensores + 5 actions
 
         # Preencher com zeros se o histórico ainda não estiver cheio
         while len(self.history) < lim_hist:
-            self.history.append(np.zeros(num_sensors)) # 13 sensores
+            self.history.append(np.zeros(num_sensors))
 
         self.last_action = np.zeros(5)
         return self._get_obs(), {}
@@ -227,8 +227,8 @@ env = OrnitoEnv()
 env = gym.wrappers.TimeLimit(env, max_episode_steps=5000)
 
 # Carregar o modelo treinado
-model_path = "C:/Users/pedro/Desktop/Ornitos/models/ornito_model_2000000_steps.zip"
-model = PPO.load(model_path, env=env, learning_rate=3e-4)
+model_path = "C:/Users/pedro/Desktop/Ornitos/models/vis antiga crazy bird.zip"
+model = PPO.load(model_path, env=env, learning_rate=1e-4)
 
 # Visualização apenas, sem treino
 obs, info = env.reset()

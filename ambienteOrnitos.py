@@ -10,12 +10,14 @@ xml_path = "Current_Model.xml"
 
 # AMBIENTE
 class OrnitoEnv(gym.Env):
-    def __init__(self, num_steps=1e3):
+    def __init__(self, num_steps = 1e3):
         super(OrnitoEnv, self).__init__()
         self.model = mujoco.MjModel.from_xml_path(xml_path)
         self.data = mujoco.MjData(self.model)
         
         self.num_steps = num_steps
+
+        # self.cont_fis = 0
 
         # Atuadores (5 motores)
         self.action_space = spaces.Box(low=-1, high=1, shape=(5,), dtype=np.float32)
@@ -24,7 +26,7 @@ class OrnitoEnv(gym.Env):
         self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(540,), dtype=np.float32)
 
         # Filtro e Frequências
-        self.dt_ia = 0.02
+        self.dt_ia = 0.0195
 
         # O relógio da FÍSICA idêntico ao do XML
         self.dt_sim = self.model.opt.timestep # (0.0015)(666.6Hz) 
@@ -205,10 +207,13 @@ class OrnitoEnv(gym.Env):
                 return obs, -100.0, True, False, {} # Retorna punição máxima e encerra
 
             # Sincroniza o visualizador a cada passo de física se estiver ativo
+
             if self.render_mode and self.viewer.is_running():
                 self.viewer.sync()
                 self.viewer.cam.lookat = self.data.body('torso').xpos
                 self.viewer.cam.distance = 5.0
+                # self.cont_fis += 1
+                # print(f"Tempo: {self.data.time}, step_fis: {self.cont_fis}")
                 time.sleep(0.002 * 2.5)
 
         obs = self._get_obs()
