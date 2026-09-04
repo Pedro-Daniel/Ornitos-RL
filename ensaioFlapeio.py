@@ -9,7 +9,7 @@ FREQUENCIA = 4.0    # Hz (Batimentos por segundo)
 AMPLITUDE = 0.8     # Fração do range total da junta (0.0 a 1.0)
 TAXA_CAUDA = 0.5     # Velocidade de resposta da cauda
 
-xml_path = "Current_Model.xml"
+xml_path = "Modelos XML/Current_Model instavel.xml"
 keys_pressed = set()
 # ctrl_cauda = 0.2341 #Trimado 3Hz
 ctrl_cauda = 0.1296 #Trimado 4Hz
@@ -34,7 +34,7 @@ def test_flapping_flight(v_initial):
     data = mujoco.MjData(model)
     
     mujoco.mj_resetData(model, data)
-    data.qpos[2] = 12.0
+    data.qpos[2] = 25.0
     data.qvel[0] = v_initial
     
     # IDs dos Atuadores

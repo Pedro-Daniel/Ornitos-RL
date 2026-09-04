@@ -6,7 +6,7 @@ import gymnasium as gym
 from gymnasium import spaces
 from collections import deque
 
-xml_path = "Current_Model.xml"
+xml_path = "Modelos XML/Current_Model.xml"
 
 # AMBIENTE
 class OrnitoEnv(gym.Env):
@@ -17,7 +17,7 @@ class OrnitoEnv(gym.Env):
         
         self.num_steps = num_steps
 
-        # self.cont_fis = 0
+        self.cont_fis = 0
 
         # Atuadores (5 motores)
         self.action_space = spaces.Box(low=-1, high=1, shape=(5,), dtype=np.float32)
@@ -30,7 +30,7 @@ class OrnitoEnv(gym.Env):
 
         # O relógio da FÍSICA idêntico ao do XML
         self.dt_sim = self.model.opt.timestep # (0.0015)(666.6Hz) 
-        self.alpha_sim = (2*np.pi*7.0*self.dt_sim)/(2*np.pi*7.0*self.dt_sim + 1)
+        self.alpha_sim = (2*np.pi*7.0*self.dt_sim)/(2*np.pi*7.0*self.dt_sim + 1) # 7.o é a frequência de corte em Hz
 
         self.passos_de_fisica_por_ia = int(self.dt_ia / self.dt_sim) # 13 passos
 
@@ -41,7 +41,7 @@ class OrnitoEnv(gym.Env):
 
         self.limiter_deltas = self._calculate_max_deltas() # Calcula os limites de variação para os motores com base no XML
 
-        self.render_mode = False
+        self.render_mode = True
 
         self.vel_target = 3.8
 
@@ -213,7 +213,8 @@ class OrnitoEnv(gym.Env):
                 self.viewer.cam.lookat = self.data.body('torso').xpos
                 self.viewer.cam.distance = 5.0
                 # self.cont_fis += 1
-                # print(f"Tempo: {self.data.time}, step_fis: {self.cont_fis}")
+                # if self.cont_fis % 100 == 0:
+                #     print(f"Tempo: {self.data.time}, step_fis: {self.cont_fis}")
                 time.sleep(0.002 * 2.5)
 
         obs = self._get_obs()
@@ -257,6 +258,8 @@ class OrnitoEnv(gym.Env):
         return (self.pos_bonification * r_pos) + (0.2 * r_att) + (0.1 * r_omega) + r_en + self.bonus_sobrevivencia
 
     def reset(self, seed = None, options = None):
+
+        self.cont_fis = 0
 
         if self.enable_curriculo:
             self.set_curriculo()

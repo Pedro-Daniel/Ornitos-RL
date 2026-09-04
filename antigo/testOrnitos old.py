@@ -227,7 +227,7 @@ env = OrnitoEnv()
 env = gym.wrappers.TimeLimit(env, max_episode_steps=5000)
 
 # Carregar o modelo treinado
-model_path = "C:/Users/pedro/Desktop/Ornitos/models/vis antiga crazy bird.zip"
+model_path = "C:/Users/pedro/Desktop/Ornitos/models/final_model_ornito_novo.zip"
 model = PPO.load(model_path, env=env, learning_rate=1e-4)
 
 # Visualização apenas, sem treino

@@ -7,11 +7,11 @@ import time
 from pynput import keyboard
 
 # Configurações de controle
-xml_path = "Current_Model.xml"
+xml_path = "Modelos XML/Current_Model.xml"
 
 TAXA_MUDANCA = 1.0  # Velocidade da mudança da cauda (unidades por segundo)
 
-ctrl_cauda = 1.0 #Trimagem, maior distância = 55.25m
+ctrl_cauda = 0.0 #Trimagem, maior distância = 55.25m
 
 # Gerenciamento de estado do teclado
 keys_pressed = set()
