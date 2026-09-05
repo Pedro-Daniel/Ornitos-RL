@@ -15,8 +15,8 @@
     </asset>
 
     <worldbody>
-        <light diffuse=".5 .5 .5" pos="0 0 3" dir="0 0 -1"/>
-        <geom type="plane" size="100 100 0.1" rgba=".9 .9 .9 1"/>
+        <light diffuse=".5 .5 .5" pos="0 0 100" dir="0 0 -1"/>
+        <geom type="plane" size="400 400 0.1" rgba=".9 .9 .9 1"/>
 
         <body name="target" mocap="true" pos="0 0 12">
             <geom type="sphere" size="0.1" rgba="1 0 0 0.5" contype="0" conaffinity="0"/>

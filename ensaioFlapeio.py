@@ -9,7 +9,7 @@ FREQUENCIA = 4.0    # Hz (Batimentos por segundo)
 AMPLITUDE = 0.8     # Fração do range total da junta (0.0 a 1.0)
 TAXA_CAUDA = 0.5     # Velocidade de resposta da cauda
 
-xml_path = "Modelos XML/Current_Model instavel.xml"
+xml_path = "Modelos XML/Current_Model.xml"
 keys_pressed = set()
 # ctrl_cauda = 0.2341 #Trimado 3Hz
 ctrl_cauda = 0.1296 #Trimado 4Hz

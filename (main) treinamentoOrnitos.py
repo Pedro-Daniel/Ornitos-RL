@@ -32,7 +32,7 @@ def criar_ambiente(num_steps):
         # Passa os mesmos passos que você já tinha
         env = OrnitoEnv(num_steps)
         # IMPORTANTE! NUNCA HABILITE A VISUALIZAÇÃO CASO ESTIVER FAZENDO TREINAMENTO COM MAIS DE UMA INSTÂNCIA! ISSO PROVAVELMENTE VAI TRAVAR O COMPUTADOR! SE FIZER PARE IMEDIATAMENTE!
-        env.set_render_mode(True)  # Desative a renderização para o treinamento
+        # env.set_render_mode(False) # Desative a renderização para o treinamento
         env = Monitor(env)  # Envolve o ambiente com Monitor para registrar estatísticas do episódio
         env = gym.wrappers.TimeLimit(env, max_episode_steps=5000)
         return env
@@ -51,16 +51,18 @@ if __name__ == "__main__":
 
 # --- ANOTAÇÕES DO EXPERIMENTO ---
     NOTAS_EXPERIMENTO = """
-    Objetivo: Verificar possibilidades de flapeio
+    Objetivo: Analisar flapeio multidirecional
     Mudanças: 
-    - Modelo XML alterado para ter margem de fase de 15%, verificar se o PPO é capaz de gerar um flapeio similar ao modelo de margem estática de 70%.
-    - A posição da asa foi alterada diretamente no XML e a angulação no tempo foi avaliada pelo algoritmo de testePlaneio.py
-    - 6 milhões de steps
-    - O modelo antigo acabou voando como um 14 bis... Essa é uma segunda tentativa de voo com os mesmos parâmetros.
+    - Foram feitas alterações nas funções reset e get_obs para que a aeronave conseguisse se identificar por meio
+    coordenadas locais ao invés de globais. Isso é necessário pois se ocorresse uma rotação de 90° no modelo anterior
+    ele deixaria de ser capaz de seguir a referência. Foram trazidos para o referencial local o sensor do tubo de pitot
+    e a distância entre o alvo e a aeronave em relação ao vetor local. 
+    - Ao final deseja-se que a aeronave seja capaz de voar em qualquer direção, não apenas ao longo do eixo X.
+    - Modelo XML: Current_Model.xml
     """
 
     # --- CHAVES DE CONTROLE DE TREINAMENTO---
-    CONTINUAR_TREINO = True  # True = Continua o treino de onde parou (na mesma pasta ou em outra), False = Inicia do zero 
+    CONTINUAR_TREINO = False  # True = Continua o treino de onde parou (na mesma pasta ou em outra), False = Inicia do zero 
     MESMA_PASTA = False  # False = Transfusão de consciência (zera os steps, nova pasta, mantém o cérebro)
 
     NOME_BASE = "PPO_Voo_Reto_novo" # Nome para a pasta nova, usada se CONTINUAR_TREINO = False.
@@ -69,7 +71,8 @@ if __name__ == "__main__":
     # Usada apenas quando eu quiser fazer transfusão de consciência.
     path_do_ultimo_checkpoint = f"{models_dir}/PPO_Voo_Reto_novo_23/PPO_Voo_Reto_novo_23_4199832_steps.zip" # Caminho dentro da pasta de modelos com o nome do modelo que eu quero carregar.
 
-    NUM_ENVS = 1
+    NUM_ENVS = 6
+
     print(f"Iniciando treinamento com {NUM_ENVS} pássaros simultâneos. Agora vai!")
     env = SubprocVecEnv([criar_ambiente(NUM_STEPS) for _ in range(NUM_ENVS)])
 
