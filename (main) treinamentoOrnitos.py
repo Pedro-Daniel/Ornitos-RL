@@ -45,31 +45,32 @@ if __name__ == "__main__":
     os.makedirs(models_dir, exist_ok=True)
     os.makedirs(logdir, exist_ok=True)
 
-    NUM_STEPS = 6e6 # Total de steps para o treinamento
+    NUM_STEPS = 4e6 # Total de steps para o treinamento
 
-    LEARN_RATE = 3e-4
+    LEARN_RATE = 1e-5
 
 # --- ANOTAÇÕES DO EXPERIMENTO ---
     NOTAS_EXPERIMENTO = """
-    Objetivo: Analisar flapeio multidirecional
+    Objetivo: Melhorar flapeio multidirecional
     Mudanças: 
-    - Foram feitas alterações nas funções reset e get_obs para que a aeronave conseguisse se identificar por meio
-    coordenadas locais ao invés de globais. Isso é necessário pois se ocorresse uma rotação de 90° no modelo anterior
-    ele deixaria de ser capaz de seguir a referência. Foram trazidos para o referencial local o sensor do tubo de pitot
-    e a distância entre o alvo e a aeronave em relação ao vetor local. 
-    - Ao final deseja-se que a aeronave seja capaz de voar em qualquer direção, não apenas ao longo do eixo X.
+    - O teste anterior de determinou que a redução para 515 foi efetiva em eliminar a direcionalidade do sistema.
+    Sugerindo que o quatérnio estava realmente manchando o sistema.
+    - Redução da learning rate para 1e-5 para aprimorar a procura.
+    - Nesse modelo se reduziu o espaço de observação para 515, eliminando a direção do quatérnio e usando o valor da gravidade
+    local e as velocidades da aeronave.
+    - Essa é uma continuação do teste anterior (PPO_Voo_Reto_29).
     - Modelo XML: Current_Model.xml
     """
 
     # --- CHAVES DE CONTROLE DE TREINAMENTO---
-    CONTINUAR_TREINO = False  # True = Continua o treino de onde parou (na mesma pasta ou em outra), False = Inicia do zero 
+    CONTINUAR_TREINO = True  # True = Continua o treino de onde parou (na mesma pasta ou em outra), False = Inicia do zero 
     MESMA_PASTA = False  # False = Transfusão de consciência (zera os steps, nova pasta, mantém o cérebro)
 
-    NOME_BASE = "PPO_Voo_Reto_novo" # Nome para a pasta nova, usada se CONTINUAR_TREINO = False.
-    NOME_RUN_ANTIGA = "PPO_Voo_Reto_novo_23" # Nome da pasta do modelo que eu quero continuar treinando (MESMA_PASTA = True) ou fazer a transfusão de consciência (MESMA_PASTA = False).
+    NOME_BASE = "PPO_Voo_Reto_novo_29c" # Nome para a pasta nova, usada se CONTINUAR_TREINO = False.
+    NOME_RUN_ANTIGA = "PPO_Voo_Reto_novo_29" # Nome da pasta do modelo que eu quero continuar treinando (MESMA_PASTA = True) ou fazer a transfusão de consciência (MESMA_PASTA = False).
 
     # Usada apenas quando eu quiser fazer transfusão de consciência.
-    path_do_ultimo_checkpoint = f"{models_dir}/PPO_Voo_Reto_novo_23/PPO_Voo_Reto_novo_23_4199832_steps.zip" # Caminho dentro da pasta de modelos com o nome do modelo que eu quero carregar.
+    path_do_ultimo_checkpoint = f"{models_dir}/PPO_Voo_Reto_novo_29/PPO_Voo_Reto_novo_29_3599856_steps.zip " # Caminho dentro da pasta de modelos com o nome do modelo que eu quero carregar.
 
     NUM_ENVS = 6
 

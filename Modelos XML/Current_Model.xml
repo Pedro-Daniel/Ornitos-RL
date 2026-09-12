@@ -22,6 +22,10 @@
             <geom type="sphere" size="0.1" rgba="1 0 0 0.5" contype="0" conaffinity="0"/>
         </body>
 
+        <!-- <body name="death_radius" mocap="true" pos="0 0 12">
+            <geom type="sphere" size="3.0" rgba="1 0 0 0.1" contype="0" conaffinity="0"/>
+        </body> -->
+
         <!-- CORPO PRINCIPAL -->
         <body name="torso" pos="0 0 12">
             <freejoint name="root"/>
