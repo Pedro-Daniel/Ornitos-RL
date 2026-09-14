@@ -9,7 +9,7 @@ env = gym.wrappers.TimeLimit(env, max_episode_steps=5000)
 
 # 2. Carregar o modelo treinado
 # model_path = "C:/Users/pedro/Desktop/Ornitos/models/PPO_Voo_Reto_novo_23/PPO_Voo_Reto_novo_23_4299828_steps.zip"
-model_path = "C:/Users/pedro/Desktop/Ornitos/models/PPO_Voo_Reto_novo_29c/PPO_Voo_Reto_novo_29c_3799848_steps.zip"
+model_path = "C:/Users/pedro/Desktop/Ornitos/models/PPO_Voo_Reto_novo_30/PPO_Voo_Reto_novo_30_7899684_steps.zip"
 model = PPO.load(model_path, env=env, learning_rate=1e-4)
 
 # 3. Loop de Execução (Sem treino, apenas ação)
