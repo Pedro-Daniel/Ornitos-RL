@@ -25,6 +25,9 @@ class OrnitoEnv(gym.Env):
         # Observação: ((12 sensores + 5 ações) * 25 frames) + (30 pontos futuro * 3 coords) = 515
         self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(515,), dtype=np.float32)
 
+        # Variável para armazenar a direção do voo no episódio atual
+        self.heading_angle = 0.0
+
         # Filtro e Frequências
         self.dt_ia = 0.0195
 
@@ -186,9 +189,12 @@ class OrnitoEnv(gym.Env):
         for i in range(1, lim_fut + 1):
             t_futuro = self.data.time + (i * self.dt_ia)
 
+            # Posição futura do alvo calculada na direção sorteada
+            target_x = self.vel_target * t_futuro * np.cos(self.heading_angle)
+            target_y = self.vel_target * t_futuro * np.sin(self.heading_angle)
+
             # Vetor de erro no referencial GLOBAL (Alvo voando em X)
-            pos_f_global = np.array([self.vel_target * t_futuro, 0.0, 12.0]) - self.data.qpos[:3]
-            # pos_f_global = np.array([0.0, self.vel_target * t_futuro, 12.0]) - self.data.qpos[:3]
+            pos_f_global = np.array([target_x, target_y, 12.0]) - self.data.qpos[:3]
 
             # Projeta o erro para o referencial LOCAL da aeronave
             pos_f_local = mat_global_to_local @ pos_f_global
@@ -211,9 +217,10 @@ class OrnitoEnv(gym.Env):
             self.data.ctrl[:] = self.current_motor_target
 
             # Atualiza alvo no MuJoCo para visualização
-            self.data.mocap_pos[0] = [self.vel_target * self.data.time, 0.0, 12.0]
-            # self.data.mocap_pos[0] = [0.0, self.vel_target * self.data.time, 12.0]
-            # self.data.mocap_pos[1] = [0.0, self.vel_target * self.data.time, 12.0] # Alteração da posição da visualização do raio de morte
+            target_x = self.vel_target * self.data.time * np.cos(self.heading_angle)
+            target_y = self.vel_target * self.data.time * np.sin(self.heading_angle)
+            self.data.mocap_pos[0] = [target_x, target_y, 12.0]
+            self.data.mocap_pos[1] = [target_x, target_y, 12.0] # Alteração da posição da visualização do raio de morte
             mujoco.mj_step(self.model, self.data)
 
             if np.any(np.abs(self.data.qvel) > 150) or np.any(np.isnan(self.data.qpos)):
@@ -231,7 +238,7 @@ class OrnitoEnv(gym.Env):
                 # self.cont_fis += 1
                 # if self.cont_fis % 100 == 0:
                 #     print(f"Tempo: {self.data.time}, step_fis: {self.cont_fis}")
-                time.sleep(0.00195 * 1.5)
+                # time.sleep(1*self.dt_ia/13.0)
 
         obs = self._get_obs()
         reward = self._compute_reward(target_action)
@@ -285,16 +292,20 @@ class OrnitoEnv(gym.Env):
 
         self.data.qpos[2] = 12.0  # Altitude de spawn
 
+        # Sorteia uma direção aleatória em radianos (-PI a +PI)
+        self.heading_angle = np.random.uniform(-np.pi, np.pi)
+        self.heading_angle = np.pi
+        
+        # Converte o ângulo Z em um Quatérnio [w, x, y, z] para rotacionar o pássaro
+        half_angle = self.heading_angle / 2.0
+        self.data.qpos[3:7] = [np.cos(half_angle), 0.0, 0.0, np.sin(half_angle)]
+
+        # Dá empuxo decomposto na direção do novo rumo
+        self.data.qvel[0] = self.vel_atual * np.cos(self.heading_angle)
+        self.data.qvel[1] = self.vel_atual * np.sin(self.heading_angle)
+
         lim_hist = 25
         num_sensors = 17 # 12 sensores + 5 ações anteriores
-
-        # self.data.qpos[3:7] = [0.7071068, 0.0, 0.0, 0.7071068] # Rotação em +90° em Z
-        # self.data.qpos[3:7] = [0.0, 0.0, 0.0, 1.0]
-
-        # Dá empulso na direção +X
-        self.data.qvel[0] = self.vel_atual
-        # self.data.qvel[1] = self.vel_atual
-        # self.data.qvel[2] = self.vel_atual
 
         self.history.clear()
 
