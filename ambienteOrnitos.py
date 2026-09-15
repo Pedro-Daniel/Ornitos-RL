@@ -294,7 +294,7 @@ class OrnitoEnv(gym.Env):
 
         # Sorteia uma direção aleatória em radianos (-PI a +PI)
         self.heading_angle = np.random.uniform(-np.pi, np.pi)
-        self.heading_angle = np.pi
+        # self.heading_angle = np.pi
         
         # Converte o ângulo Z em um Quatérnio [w, x, y, z] para rotacionar o pássaro
         half_angle = self.heading_angle / 2.0
