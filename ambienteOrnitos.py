@@ -85,7 +85,73 @@ class OrnitoEnv(gym.Env):
         self.cd_slender_inicial = 0.01
         self.cd_slender_final = 0.6
 
-        # self.assign_coefs_to_surfs([self.cd_blunt_inicial, self.cd_slender_inicial, 1.5, self.ck_final, 1.0, 0, 0, 0, 0, 0, 0, 0])
+        # Variáveis de Navegação 3D
+        self.ultimo_tempo_comando = 0.0
+        self.target_heading = 0.0 # Direção XY (Yaw)
+        self.target_gamma = 0.0 # Ângulo de Subida/Descida (Pitch)
+        
+        # BUFFER DE TRAJETÓRIA (1 atual + 30 futuros)
+        self.target_buffer = deque(maxlen=31)
+        self.pos_alvo_gerador = np.array([0.0, 0.0, 50.0]) # A "ponta" que desenha o caminho
+
+
+    def _sortear_novo_comando(self):
+        # Apenas ajusta a matemática da IA. O gerador desenhará isso no futuro.
+        self.ultimo_tempo_comando = self.data.time
+        
+        limite_pitch_absoluto_max = np.deg2rad(45.0)
+        limite_pitch_absoluto_min = np.deg2rad(-60.0)
+        limite_delta = np.deg2rad(50.0) 
+
+        gamma_candidato = np.random.uniform(limite_pitch_absoluto_min, limite_pitch_absoluto_max)
+        self.target_gamma = np.clip(gamma_candidato, self.target_gamma - limite_delta, self.target_gamma + limite_delta)
+        
+        if self.target_gamma < 0:
+            fator_gravidade = 1.0 - np.sin(self.target_gamma)
+        else:
+            fator_gravidade = 1.0 - (0.2 * np.sin(self.target_gamma))
+        
+        self.vel_dinamica = self.vel_target * fator_gravidade
+
+
+    def _avancar_gerador_alvo(self):
+        # Cria apenas 1 ponto novo no futuro (dt_ia) e adiciona na ponta do vetor
+        v_xy = self.vel_dinamica * np.cos(self.target_gamma)
+        v_z = self.vel_dinamica * np.sin(self.target_gamma)
+        
+        delta_x = v_xy * self.dt_ia * np.cos(self.target_heading)
+        delta_y = v_xy * self.dt_ia * np.sin(self.target_heading)
+        delta_z = v_z * self.dt_ia
+        
+        self.pos_alvo_gerador += np.array([delta_x, delta_y, delta_z])
+        
+        # Trava: o gerador nunca desenha um caminho abaixo de 5 metros
+        if self.pos_alvo_gerador[2] < 5.0:
+            self.pos_alvo_gerador[2] = 5.0
+
+
+    def _obter_posicao_alvo(self, t):
+        delta_t = t - self.ultimo_tempo_comando
+        
+        # Usa a velocidade escalada pelo fator de gravidade
+        v_xy = self.vel_dinamica * np.cos(self.target_gamma)
+        v_z = self.vel_dinamica * np.sin(self.target_gamma)
+        
+        delta_x = v_xy * delta_t * np.cos(self.target_heading)
+        delta_y = v_xy * delta_t * np.sin(self.target_heading)
+        delta_z = v_z * delta_t
+        
+        novo_z = self.pos_ancora_alvo[2] + delta_z
+        
+        # Trava: o alvo nunca desce abaixo de 5 metros de altitude
+        if novo_z < 5.0:
+            novo_z = 5.0
+            
+        return np.array([
+            self.pos_ancora_alvo[0] + delta_x,
+            self.pos_ancora_alvo[1] + delta_y,
+            novo_z
+        ])
 
     def set_global_step(self, step_atual):
         # O Callback chama isso a cada frame apenas para atualizar o número de steps atual
@@ -190,11 +256,10 @@ class OrnitoEnv(gym.Env):
             t_futuro = self.data.time + (i * self.dt_ia)
 
             # Posição futura do alvo calculada na direção sorteada
-            target_x = self.vel_target * t_futuro * np.cos(self.heading_angle)
-            target_y = self.vel_target * t_futuro * np.sin(self.heading_angle)
+            t_futuro = self.data.time + (i * self.dt_ia)
 
             # Vetor de erro no referencial GLOBAL (Alvo voando em X)
-            pos_f_global = np.array([target_x, target_y, 12.0]) - self.data.qpos[:3]
+            pos_f_global = self._obter_posicao_alvo(t_futuro) - self.data.qpos[:3]
 
             # Projeta o erro para o referencial LOCAL da aeronave
             pos_f_local = mat_global_to_local @ pos_f_global
@@ -216,11 +281,19 @@ class OrnitoEnv(gym.Env):
             # Envia a curva suave para os motores
             self.data.ctrl[:] = self.current_motor_target
 
+            # Verifica se já passaram 3 segundos
+            if (self.data.time - self.ultimo_tempo_comando) >= 3.0:
+                self._sortear_novo_comando()
+
             # Atualiza alvo no MuJoCo para visualização
-            target_x = self.vel_target * self.data.time * np.cos(self.heading_angle)
-            target_y = self.vel_target * self.data.time * np.sin(self.heading_angle)
-            self.data.mocap_pos[0] = [target_x, target_y, 12.0]
-            self.data.mocap_pos[1] = [target_x, target_y, 12.0] # Alteração da posição da visualização do raio de morte
+            pos_atual = self._obter_posicao_alvo(self.data.time)
+            self.data.mocap_pos[0] = pos_atual
+            self.data.mocap_pos[1] = self._obter_posicao_alvo(self.data.time + (5 * self.dt_ia))
+            self.data.mocap_pos[2] = self._obter_posicao_alvo(self.data.time + (10 * self.dt_ia))
+            self.data.mocap_pos[3] = self._obter_posicao_alvo(self.data.time + (15 * self.dt_ia))
+            self.data.mocap_pos[4] = self._obter_posicao_alvo(self.data.time + (20 * self.dt_ia))
+            self.data.mocap_pos[5] = self._obter_posicao_alvo(self.data.time + (25 * self.dt_ia))
+
             mujoco.mj_step(self.model, self.data)
 
             if np.any(np.abs(self.data.qvel) > 150) or np.any(np.isnan(self.data.qpos)):
@@ -233,12 +306,12 @@ class OrnitoEnv(gym.Env):
 
             if self.render_mode and self.viewer.is_running():
                 self.viewer.sync()
-                self.viewer.cam.lookat = self.data.body('torso').xpos
+                self.viewer.cam.lookat = self.data.body('target').xpos
                 self.viewer.cam.distance = 10.0
                 # self.cont_fis += 1
                 # if self.cont_fis % 100 == 0:
                 #     print(f"Tempo: {self.data.time}, step_fis: {self.cont_fis}")
-                # time.sleep(1*self.dt_ia/13.0)
+                time.sleep(1*self.dt_ia/13.0)
 
         obs = self._get_obs()
         reward = self._compute_reward(target_action)
@@ -246,8 +319,10 @@ class OrnitoEnv(gym.Env):
         lim_area = 3.0
 
         dist = np.linalg.norm(self.data.qpos[:3] - self.data.mocap_pos[0])
-        bateu_no_chao = self.data.qpos[2] < 1.0
-        terminated = bool(dist > lim_area or bateu_no_chao) # Fora da área
+        # bateu_no_chao = self.data.qpos[2] < 1.0
+        # terminated = bool(dist > lim_area or bateu_no_chao) # Fora da área
+        # terminated = bool(dist > lim_area)
+        terminated = False
 
         if terminated:
             reward -= 30.0 # Punição fixa por morte
@@ -280,8 +355,8 @@ class OrnitoEnv(gym.Env):
         # Retorna o somatório com os pesos baseados no artigo
         return (self.pos_bonification * r_pos) + (0.2 * r_att) + (0.1 * r_omega) + r_en + self.bonus_sobrevivencia
 
-    def reset(self, seed = None, options = None):
 
+    def reset(self, seed = None, options = None):
         self.cont_fis = 0
 
         if self.enable_curriculo:
@@ -290,11 +365,11 @@ class OrnitoEnv(gym.Env):
         super().reset(seed=seed)
         mujoco.mj_resetData(self.model, self.data)
 
-        self.data.qpos[2] = 12.0  # Altitude de spawn
+        self.data.qpos[2] = 50.0  # Altitude de spawn
 
         # Sorteia uma direção aleatória em radianos (-PI a +PI)
         self.heading_angle = np.random.uniform(-np.pi, np.pi)
-        # self.heading_angle = np.pi
+        self.target_heading = self.heading_angle
         
         # Converte o ângulo Z em um Quatérnio [w, x, y, z] para rotacionar o pássaro
         half_angle = self.heading_angle / 2.0
@@ -306,7 +381,6 @@ class OrnitoEnv(gym.Env):
 
         lim_hist = 25
         num_sensors = 17 # 12 sensores + 5 ações anteriores
-
         self.history.clear()
 
         # Preenche com zeros se o histórico ainda não estiver cheio
@@ -318,6 +392,21 @@ class OrnitoEnv(gym.Env):
 
         # ATUALIZA A FÍSICA CINEMÁTICA ANTES DO PASSO 1 (Evita os erros NaN)
         mujoco.mj_forward(self.model, self.data)
+
+        # Define a âncora EXATAMENTE onde o pássaro nasceu
+        self.pos_ancora_alvo = [0.0, 0.0, 50.0]
+        self.ultimo_tempo_comando = self.data.time
+        
+        self.target_gamma = 0.0
+        self.vel_dinamica = self.vel_target
+
+        # Posiciona todas as esferas corretamente no instante t=0
+        self.data.mocap_pos[0] = self._obter_posicao_alvo(0.0)
+        self.data.mocap_pos[1] = self._obter_posicao_alvo(5 * self.dt_ia)
+        self.data.mocap_pos[2] = self._obter_posicao_alvo(10 * self.dt_ia)
+        self.data.mocap_pos[3] = self._obter_posicao_alvo(15 * self.dt_ia)
+        self.data.mocap_pos[4] = self._obter_posicao_alvo(25 * self.dt_ia)
+        # self.data.mocap_pos[5] = self.pos_ancora_alvo
 
         return self._get_obs(), {}
 
