@@ -30,7 +30,8 @@ class OrnitoEnv(gym.Env):
 
         # O relógio da FÍSICA idêntico ao do XML
         self.dt_sim = self.model.opt.timestep # (0.0015)(666.6Hz) 
-        self.alpha_sim = (2*np.pi*7.0*self.dt_sim)/(2*np.pi*7.0*self.dt_sim + 1)
+        self.alpha_sim = (2*np.pi*7.0*self.dt_sim)/(2*np.pi*7.0*self.dt_sim + 1) # Por Euler
+        # self.alpha_sim = 1.0 - np.exp(-2 * np.pi * 7.0 * self.dt_sim) # Por ZOH
 
         self.passos_de_fisica_por_ia = int(self.dt_ia / self.dt_sim) # 13 passos
 
@@ -118,7 +119,7 @@ class OrnitoEnv(gym.Env):
         motores = ['motor_q1', 'motor_q2', 'motor_q3', 'motor_q4', 'motor_q5']
         deltas = np.zeros(5)
         
-        v_max_rad_s = np.deg2rad(2400) # Converte 600*4 graus/s para rad/s
+        v_max_rad_s = np.deg2rad(2400) # Velocidade máxima de 600*4 graus/s (~400 RPM)
         max_rad_per_step = v_max_rad_s*self.dt_ia
 
         for i, nome in enumerate(motores):
@@ -138,19 +139,15 @@ class OrnitoEnv(gym.Env):
         return deltas
 
     def assign_coefs_to_surfs(self, coefs:list):
-        # IDs das geoms (certifique-se que os nomes batem com o seu XML)
-        asas = ['wing_l', 'wing_r', 'tail'] # nomes das geoms
-
-        # Coeficientes: [Sustentação, Arrasto, Momento, Kutta_Lift, Escala_Força, ...]
-        # MuJoCo usa 12 slots internos. Vamos preencher os 5 primeiros.
+        # IDs das geoms
+        asas = ['wing_l', 'wing_r', 'tail'] # nomes das superfíceis de controle no XML
         novos_coefs = coefs
 
         for nome in asas:
             try:
                 g_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, nome)
                 self.model.geom_fluid[g_id] = novos_coefs
-                # print(".cf")
-                # print(f"Sucesso: Coeficientes de {nome} atualizados manualmente.")
+                print(f"Sucesso: Coeficientes de {nome} atualizados manualmente.")
             except:
                 print(f"Erro: Geom '{nome}' não encontrada no modelo.")
 
@@ -163,15 +160,15 @@ class OrnitoEnv(gym.Env):
 
     def _get_obs(self):
         # Sensores (13 valores)
-        eta = self.data.qpos[3:7]  # Quatérnio
-        pqr = self.data.qvel[3:6]  # Vel Angular
-        qj = self.data.qpos[7:12]  # Juntas
-        vx = np.array([self.data.qvel[0]]) # Pitot
+        eta = self.data.qpos[3:7]  # Quatérnio (4)
+        pqr = self.data.qvel[3:6]  # Vel Angular (3)
+        qj = self.data.qpos[7:12]  # Juntas (5)
+        vx = np.array([self.data.qvel[0]]) # Pitot (1)
         current_obs = np.concatenate([eta, pqr, qj, vx, self.last_policy_action])
         
         self.history.append(current_obs)
         
-        # Trajetória Futura (Look-ahead: 30 pontos)
+        # Trajetória Futura (30 pontos)
         lim_fut = 30
         future_traj = []
         for i in range(1, lim_fut + 1):
@@ -184,11 +181,11 @@ class OrnitoEnv(gym.Env):
 
     def step(self, action):
 
-        # 1. Rate Limiter (A 50Hz): Limita o quão brusca a política pode ser de um passo pro outro
+        # Rate Limiter (A 50Hz): Limita o quão brusca a política pode ser de um passo pro outro
         target_action = np.clip(action, self.last_policy_action - self.limiter_deltas, self.last_policy_action + self.limiter_deltas)
         self.last_policy_action = target_action
 
-        # 2. Loop da Física (A 666Hz)
+        # Loop da Física (A 666Hz)
         for _ in range(self.passos_de_fisica_por_ia):
             # Filtro Passa-Baixa INTERPOLADO a cada passo do MuJoCo
             self.current_motor_target = self.alpha_sim * target_action + (1 - self.alpha_sim) * self.current_motor_target
@@ -210,8 +207,8 @@ class OrnitoEnv(gym.Env):
 
             if self.render_mode and self.viewer.is_running():
                 self.viewer.sync()
-                self.viewer.cam.lookat = self.data.body('torso').xpos
-                self.viewer.cam.distance = 5.0
+                # self.viewer.cam.lookat = self.data.body('torso').xpos
+                # self.viewer.cam.distance = 5.0
                 # self.cont_fis += 1
                 # print(f"Tempo: {self.data.time}, step_fis: {self.cont_fis}")
                 time.sleep(0.002 * 2.5)
@@ -233,20 +230,20 @@ class OrnitoEnv(gym.Env):
         return obs, reward, terminated, truncated, {}
 
     def _compute_reward(self, action):
-        # 1. Rastreamento de Posição (Gaussiana)
+        # Rastreamento de Posição (Gaussiana)
         # O uso do exp() garante que o erro máximo seja assintótico a 0, 
         # evitando o "suicídio" da IA por punições infinitas (-dist^2).
         dist = np.linalg.norm(self.data.qpos[:3] - self.data.mocap_pos[0])
         r_pos = np.exp(-0.2 * (dist**2)) # Retorna 1 se perfeito, cai suavemente para 0 se longe
 
-        # 2. Estabilidade Angular (Penaliza apenas Roll e Pitch, permite Yaw)
+        # Estabilidade Angular (Penaliza apenas Roll e Pitch, permite Yaw)
         # Usamos a matriz de rotação do torso para extrair os ângulos reais de forma limpa
         mat = self.data.body('torso').xmat.reshape(3, 3)
         pitch = np.arcsin(np.clip(-mat[2, 0], -1.0, 1.0))
         roll = np.arctan2(mat[2, 1], mat[2, 2])
         r_att = np.exp(-2.0 * (pitch**2 + roll**2)) # 1 quando nivelado, decai se inclinar
 
-        # 3. Taxa de Rotação do Corpo (Suavidade)
+        # Taxa de Rotação do Corpo (Suavidade)
         r_omega = np.exp(-0.1 * np.sum(np.square(self.data.qvel[3:6])))
 
         # Alternativa de Energia: penalizar a variação da ação em relação ao step anterior
@@ -291,7 +288,7 @@ if __name__ == "__main__":
     import numpy as np
     import time
     
-    # 1. Instancia o ambiente apenas para teste local
+    # Instancia o ambiente apenas para teste local
     print("Iniciando ambiente em modo de teste...")
     env = OrnitoEnv() 
     obs, info = env.reset()
@@ -299,7 +296,7 @@ if __name__ == "__main__":
     print("\n--- Verificação do Setup ---")
     print(f"Limites de Delta Calculados (q1 a q5): {env.limiter_deltas}")
     
-    # 2. Criamos uma ação de teste isolada
+    # Criamos uma ação de teste isolada
     # Exemplo: Comanda ação máxima (1.0) APENAS no índice 0 (esperado: motor_q1)
     acao_teste = np.array([1.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32)
     
@@ -310,7 +307,7 @@ if __name__ == "__main__":
     for _ in range(10): 
         obs, reward, terminated, truncated, info = env.step(acao_teste)
         
-    # 3. Verifica o que chegou de fato nos atuadores do MuJoCo
+    # Verifica o que chegou de fato nos atuadores do MuJoCo
     print(f"Buffer de controle do MuJoCo (data.ctrl): {env.data.ctrl[:5]}")
     
     # Verifica o estado da física (posição das juntas)
