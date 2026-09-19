@@ -45,32 +45,29 @@ if __name__ == "__main__":
     os.makedirs(models_dir, exist_ok=True)
     os.makedirs(logdir, exist_ok=True)
 
-    NUM_STEPS = 4e6 # Total de steps para o treinamento
+    NUM_STEPS = 8e6 # Total de steps para o treinamento
 
-    LEARN_RATE = 1e-5
+    LEARN_RATE = 3e-4
 
 # --- ANOTAÇÕES DO EXPERIMENTO ---
     NOTAS_EXPERIMENTO = """
-    Objetivo: Melhorar flapeio multidirecional
-    Mudanças: 
-    - O teste anterior de determinou que a redução para 515 foi efetiva em eliminar a direcionalidade do sistema.
-    Sugerindo que o quatérnio estava realmente manchando o sistema.
-    - Redução da learning rate para 1e-5 para aprimorar a procura.
-    - Nesse modelo se reduziu o espaço de observação para 515, eliminando a direção do quatérnio e usando o valor da gravidade
-    local e as velocidades da aeronave.
-    - Essa é uma continuação do teste anterior (PPO_Voo_Reto_29).
-    - Modelo XML: Current_Model.xml
+    Objetivo: Consolidar subida e descida (arfagem)
+    Mudanças:
+    - Trasnfusão de consciência do modelo treinado com 600°/s de velocidade máxima dos servos (modelo 31);
+    - Chão do ambiente de simulação comentado/removido;
+    - Restrição de tocar no chão comentada/removida;
+    - Movimentação multidirecional em torno de Z com sobe e desce, com o setup de 515 entradas.
     """
 
     # --- CHAVES DE CONTROLE DE TREINAMENTO---
     CONTINUAR_TREINO = True  # True = Continua o treino de onde parou (na mesma pasta ou em outra), False = Inicia do zero 
     MESMA_PASTA = False  # False = Transfusão de consciência (zera os steps, nova pasta, mantém o cérebro)
 
-    NOME_BASE = "PPO_Voo_Reto_novo_29c" # Nome para a pasta nova, usada se CONTINUAR_TREINO = False.
-    NOME_RUN_ANTIGA = "PPO_Voo_Reto_novo_29" # Nome da pasta do modelo que eu quero continuar treinando (MESMA_PASTA = True) ou fazer a transfusão de consciência (MESMA_PASTA = False).
+    NOME_BASE = "PPO_Sobe_Desce_1" # Nome para a pasta nova, usada se CONTINUAR_TREINO = False.
+    NOME_RUN_ANTIGA = "PPO_Voo_Reto_novo_31" # Nome da pasta do modelo que eu quero continuar treinando (MESMA_PASTA = True) ou fazer a transfusão de consciência (MESMA_PASTA = False).
 
     # Usada apenas quando eu quiser fazer transfusão de consciência.
-    path_do_ultimo_checkpoint = f"{models_dir}/PPO_Voo_Reto_novo_29/PPO_Voo_Reto_novo_29_3599856_steps.zip " # Caminho dentro da pasta de modelos com o nome do modelo que eu quero carregar.
+    path_do_ultimo_checkpoint = f"{models_dir}/PPO_Voo_Reto_novo_31/PPO_Voo_Reto_novo_31_6599736_steps.zip " # Caminho dentro da pasta de modelos com o nome do modelo que eu quero carregar.
 
     NUM_ENVS = 6
 
@@ -118,7 +115,7 @@ if __name__ == "__main__":
     # Cria uma subpasta dentro de 'models' com o mesmo nome da run
     pasta_checkpoints = f"{models_dir}/{nome_run_final}"
     os.makedirs(pasta_checkpoints, exist_ok=True)
-
+    
 # --- SALVAMENTO DAS NOTAS CIENTÍFICAS ---
     caminho_notas = f"{pasta_checkpoints}/notas_experimento_{nome_run_final}.txt"
     with open(caminho_notas, "w", encoding="utf-8") as f:
