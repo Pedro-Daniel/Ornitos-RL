@@ -10,14 +10,12 @@ xml_path = "Modelos XML/Current_Model.xml"
 
 # AMBIENTE
 class OrnitoEnv(gym.Env):
-    def __init__(self, num_steps = 1e3):
+    def __init__(self, num_steps = 5e3):
         super(OrnitoEnv, self).__init__()
         self.model = mujoco.MjModel.from_xml_path(xml_path)
         self.data = mujoco.MjData(self.model)
         
         self.num_steps = num_steps
-
-        self.cont_fis = 0
 
         # Atuadores (5 motores)
         self.action_space = spaces.Box(low=-1, high=1, shape=(5,), dtype=np.float32)
@@ -35,6 +33,7 @@ class OrnitoEnv(gym.Env):
         self.dt_sim = self.model.opt.timestep # (0.0015)(666.6Hz) 
 
         self.alpha_sim = 1.0 - np.exp(-2 * np.pi * 7.0 * self.dt_sim) # 7.0 é a frequência de corte em Hz. Discretizado por ZOH.
+        # self.alpha_sim = (2 * np.pi * 7.0 * self.dt_sim) / (2 * np.pi * 7.0 * self.dt_sim + 1)
 
         self.passos_de_fisica_por_ia = int(self.dt_ia / self.dt_sim) # 13 passos
 
@@ -46,10 +45,13 @@ class OrnitoEnv(gym.Env):
         self.limiter_deltas = self._calculate_max_deltas() # Calcula os limites de variação para os motores com base no XML
 
         self.render_mode = False
+        self.viewer = None
 
         self.vel_target = 3.8
 
-        #### Parâmetros iniciais para o currículo: ####
+
+
+        #### Parâmetros iniciais para currículo: ####
 
         self.enable_curriculo = False  # Ativa o currículo de dificuldade progressiva durante o reset do ambiente
 
@@ -57,34 +59,11 @@ class OrnitoEnv(gym.Env):
 
         # Configuração dos limites da rampa
         self.passo_final_rampa = self.num_steps - 5e3  # A rampa dura 3M steps, e valores ficam constantes depois disso
-        
-        # Gravidade: Começa na Lua (-1.62) e termina na Terra (-9.81)
-        self.g_inicial = -9.81
-        self.g_final = -1.62
-
-        self.bonus_sobrevivencia = 0.0
 
         # Velocidade da aeronave no começo do episódio
-        self.vel_inicial = self.vel_target/4.0
-        self.vel_final = self.vel_target
-        self.vel_atual = self.vel_inicial
+        self.vel_inicial = self.vel_target
 
-        # Penalidade de energia, para incentivar comportamentos mais frenéticos no começo e mais econômicos no final
-        self.ener_inicial = -0.001
-        self.ener_final = -0.05
-        self.energia_atual = self.ener_final
 
-        self.pos_bonification = 0.5 # 0.5 no artigo
-
-        # Kutta Lift: Começa super alto (8.0) e termina no valor real do artigo (3.14) 
-        self.ck_inicial = 8.0
-        self.ck_final = 3.14
-
-        self.cd_blunt_inicial = 0.4
-        self.cd_blunt_final = 0.2
-
-        self.cd_slender_inicial = 0.01
-        self.cd_slender_final = 0.6
 
         # Variáveis de Navegação 3D
         self.ultimo_tempo_comando = 0.0
@@ -97,23 +76,102 @@ class OrnitoEnv(gym.Env):
         self.target_buffer = deque(maxlen=self.lim_fut+1)
         self.pos_alvo_gerador = np.array([0.0, 0.0, 50.0]) # A "ponta" que desenha o caminho
 
+        self.ep_step = 0
 
-    def _sortear_novo_comando(self):
+    ################ MÉTODOS DO AMBIENTE ################
+
+    def set_global_step(self, step_atual):
+        # O Callback chama isso a cada frame apenas para atualizar o número de steps atual
+        self.global_step = step_atual
+
+
+    def set_curriculo(self):
+        if self.global_step <= self.passo_final_rampa:
+            # Calcula o fator de interpolação linear (alfa vai de 0.0 a 1.0)
+            alfa = min(self.global_step / self.passo_final_rampa, 1.0)
+
+            # Expande o leque de arfagem conforme o treinamento avança
+            self.pitch_max_atual = np.deg2rad(15.0) + alfa * (np.deg2rad(45.0) - np.deg2rad(15.0))
+            self.pitch_min_atual = np.deg2rad(-15.0) + alfa * (np.deg2rad(-60.0) - np.deg2rad(-15.0))
+
+            # if self.ep_step % 50_000 == 0:
+            #     print(f"[CURRÍCULO] Passo: {self.ep_step} | Gravidade Z: {self.model.opt.gravity[2]:.2f}")
+
+
+    def set_render_mode(self, mode:bool):
+        self.render_mode = mode
+        if mode:
+            self.viewer = mujoco.viewer.launch_passive(self.model, self.data)
+        elif not mode:
+            self.viewer = None
+
+    # Esta função será reciclada para a randomização de domínio!
+    # def assign_coefs_to_surfs(self, coefs:list):
+    #     # IDs das geoms (certifique-se que os nomes batem com o seu XML)
+    #     asas = ['wing_l', 'wing_r', 'tail'] # nomes das geoms
+
+    #     # Coeficientes: [Sustentação, Arrasto, Momento, Kutta_Lift, Escala_Força, ...]
+    #     # MuJoCo usa 12 slots internos. Vamos preencher os 5 primeiros.
+    #     novos_coefs = coefs
+
+    #     for nome in asas:
+    #         try:
+    #             g_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, nome)
+    #             self.model.geom_fluid[g_id] = novos_coefs
+    #             # print(".cf")
+    #             # print(f"Sucesso: Coeficientes de {nome} atualizados manualmente.")
+    #         except:
+    #             print(f"Erro: Geom '{nome}' não encontrada no modelo.")
+
+    #     # Verifique o coeficiente de arrasto da primeira asa (geom id ou nome)
+    #     geom_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, 'wing_l')
+    #     # print(f"Coeficientes do fluido da asa: {self.model.geom_fluid[geom_id]}")
+
+    #     mujoco.mj_resetData(self.model, self.data)
+
+
+    def _sortear_novo_comando(self, flag="protocolar"):
         # Apenas ajusta a matemática da IA. O gerador desenhará isso no futuro.
         self.ultimo_tempo_comando = self.data.time
         
-        limite_pitch_absoluto_max = np.deg2rad(45.0)
-        limite_pitch_absoluto_min = np.deg2rad(-60.0)
-        limite_delta = np.deg2rad(40.0) 
+        if flag == "protocolar":
+            cronograma = [
+                (6.0, 15.0),
+                (12.0, 30.0)
+                # (18.0, -15.0),
+                # (24.0, 0.0),
+                # (30.0, 30.0),
+                # (36.0, 0.0),
+                # (42.0, -30.0),
+                # (48.0, 0.0),
+                # (54.0, 15.0),
+                # (60.0, 30.0),
+                # (66.0, 45.0),
+                # (72.0, 0.0),
+                # (78.0, 20.0),
+                # (82.0, -30.0),
+                # (86.0, -60.0),
+                # (90.0, 0.0)
+            ]
 
-        # limite_pitch_absoluto_max = np.deg2rad(15.0)  # Ondulações suaves para iniciar
-        # limite_pitch_absoluto_min = np.deg2rad(-20.0)
-        # limite_delta = np.deg2rad(13.0)
+            # Encontra em qual estágio do tempo estamos
+            novo_angulo_deg = 0.0
+            for tempo_transicao, angulo in reversed(cronograma):
+                if self.data.time >= tempo_transicao:
+                    novo_angulo_deg = angulo
+                    break
+                    
+            self.target_gamma = np.deg2rad(novo_angulo_deg)
 
-        gamma_candidato = np.random.uniform(limite_pitch_absoluto_min, limite_pitch_absoluto_max)
-        self.target_gamma = np.clip(gamma_candidato, self.target_gamma - limite_delta, self.target_gamma + limite_delta)
+        elif flag == "aleatorio":
+            limite_pitch_absoluto_max = np.deg2rad(45.0)
+            limite_pitch_absoluto_min = np.deg2rad(-60.0)
+            limite_delta = np.deg2rad(15.0)
+
+            gamma_candidato = np.random.uniform(limite_pitch_absoluto_min, limite_pitch_absoluto_max)
+            self.target_gamma = np.clip(gamma_candidato, self.target_gamma - limite_delta, self.target_gamma + limite_delta)
         
-        # CÁLCULO DA VELOCIDADE VARIÁVEL
+        # NOVO CÁLCULO DA VELOCIDADE VARIÁVEL
         if self.target_gamma < 0:
             # Mergulho ganha velocidade com a gravidade. 
             # Em -60° (sin(-60) = -0.866), usamos fator 0.45 para gerar ~5.3 m/s.
@@ -123,6 +181,7 @@ class OrnitoEnv(gym.Env):
             fator_gravidade = 1.0
         
         self.vel_dinamica_target = self.vel_target * fator_gravidade
+
 
     def _avancar_gerador_alvo(self):
         # Cria apenas 1 ponto novo no futuro (dt_ia) e adiciona na ponta do vetor
@@ -134,39 +193,7 @@ class OrnitoEnv(gym.Env):
         delta_z = v_z * self.dt_ia
         
         self.pos_alvo_gerador += np.array([delta_x, delta_y, delta_z])
-        
-        # Trava: o gerador nunca desenha um caminho abaixo de 5 metros
-        # if self.pos_alvo_gerador[2] < 5.0:
-        #     self.pos_alvo_gerador[2] = 5.0
 
-    def set_global_step(self, step_atual):
-        # O Callback chama isso a cada frame apenas para atualizar o número de steps atual
-        self.global_step = step_atual
-
-    def set_render_mode(self, mode:bool):
-        self.render_mode = mode
-        if mode:
-            self.viewer = mujoco.viewer.launch_passive(self.model, self.data)
-        elif not mode:
-            self.viewer = None
-
-    def set_curriculo(self):
-        if self.global_step <= self.passo_final_rampa:
-            # Calcula o fator de interpolação linear (alfa vai de 0.0 a 1.0)
-            alfa = min(self.global_step / self.passo_final_rampa, 1.0)
-
-            # Equação da rampa: valor = inicial + alfa * (final - inicial)
-            # self.model.opt.gravity[2] = self.g_inicial + alfa * (self.g_final - self.g_inicial)
-            # self.vel_atual = self.vel_inicial + alfa * (self.vel_final - self.vel_inicial)
-            self.energia_atual = self.ener_inicial + alfa * (self.ener_final - self.ener_inicial)
-            # ck_atual = self.ck_inicial + alfa * (self.ck_final - self.ck_inicial)
-            cd_blunt_atual = self.cd_blunt_inicial + alfa * (self.cd_blunt_final - self.cd_blunt_inicial)
-            cd_slender_atual = self.cd_slender_inicial + alfa * (self.cd_slender_final - self.cd_slender_inicial)
-
-            # self.assign_coefs_to_surfs([cd_blunt_atual, cd_slender_atual, 1.5, self.ck_final, 1.0, 0, 0, 0, 0, 0, 0, 0])
-
-            # if self.global_step % 50_000 == 0:
-            #     print(f"[CURRÍCULO] Passo: {self.global_step} | Gravidade Z: {self.model.opt.gravity[2]:.2f} | C_K: {ck_atual:.2f} | Velocidade Inicial: {self.vel_atual:.2f} | Penalt Energia: {self.energia_atual:.5f}")
 
     def _calculate_max_deltas(self):
         # A ordem aqui DEVE ser a mesma que a sua IA devolve na variável 'action'
@@ -192,28 +219,40 @@ class OrnitoEnv(gym.Env):
         # print(f"Delta motores calculados | {deltas}")
         return deltas
 
-    def assign_coefs_to_surfs(self, coefs:list):
-        # IDs das geoms (certifique-se que os nomes batem com o seu XML)
-        asas = ['wing_l', 'wing_r', 'tail'] # nomes das geoms
 
-        # Coeficientes: [Sustentação, Arrasto, Momento, Kutta_Lift, Escala_Força, ...]
-        # MuJoCo usa 12 slots internos. Vamos preencher os 5 primeiros.
-        novos_coefs = coefs
+    def _compute_reward(self, action):
+        # 1. Rastreamento de Posição (Gaussiana)
+        # O uso do exp() garante que o erro máximo seja assintótico a 0, 
+        # evitando o "suicídio" da IA por punições infinitas (-dist^2).
+        dist = np.linalg.norm(self.data.qpos[:3] - self.data.mocap_pos[0])
+        r_pos = np.exp(-0.2 * (dist**2)) # Retorna 1 se perfeito, cai suavemente para 0 se longe
 
-        for nome in asas:
-            try:
-                g_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, nome)
-                self.model.geom_fluid[g_id] = novos_coefs
-                # print(".cf")
-                # print(f"Sucesso: Coeficientes de {nome} atualizados manualmente.")
-            except:
-                print(f"Erro: Geom '{nome}' não encontrada no modelo.")
+        # 2. Estabilidade Angular (Média Móvel do Buffer Preditivo)
+        # Converte o deque para array NumPy para cálculos vetorizados rápidos
+        buffer_np = np.array(self.target_buffer)
+        # Calcula os deltas (dx, dy, dz) entre cada um dos 30 pontos consecutivos
+        diffs = buffer_np[1:] - buffer_np[:-1] 
+        # Extrai os 30 ângulos de inclinação (pitch) do futuro
+        angulos_futuros = np.arctan2(diffs[:, 2], diffs[:, 0]) 
+        # A média gradativa
+        gamma_gradual = np.mean(angulos_futuros) 
+        # Matriz de rotação e ângulos reais do ornitóptero
+        mat = self.data.body('torso').xmat.reshape(3, 3)
+        pitch = np.arcsin(np.clip(-mat[2, 0], -1.0, 1.0))
+        roll = np.arctan2(mat[2, 1], mat[2, 2])
+        # O erro agora contra uma rampa suave
+        erro_pitch = pitch - gamma_gradual
+        r_att = np.exp(-2.0 * (erro_pitch**2 + roll**2))
 
-        # Verifique o coeficiente de arrasto da primeira asa (geom id ou nome)
-        geom_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, 'wing_l')
-        # print(f"Coeficientes do fluido da asa: {self.model.geom_fluid[geom_id]}")
+        # 3. Taxa de Rotação do Corpo (Suavidade)
+        r_omega = np.exp(-0.1 * np.sum(np.square(self.data.qvel[3:6])))
 
-        mujoco.mj_resetData(self.model, self.data)
+        # Alternativa de Energia: penalizar a variação da ação em relação ao step anterior
+        delta_action = action - self.last_policy_action 
+        r_en = np.sum(np.square(delta_action))
+
+        # Retorna o somatório com os pesos baseados no artigo
+        return 0.5*r_pos + 0.1*r_omega + 0.2*r_att - 0.05*r_en
 
 
     def _get_obs(self):
@@ -252,9 +291,16 @@ class OrnitoEnv(gym.Env):
         target_action = np.clip(action, self.last_policy_action - self.limiter_deltas, self.last_policy_action + self.limiter_deltas)
         self.last_policy_action = target_action
 
+        self.ep_step += 1
+
         # 2. Lógica do Alvo e do Buffer (Atualiza a 50Hz)
-        if (self.data.time - self.ultimo_tempo_comando) >= 3.0:
-            self._sortear_novo_comando()
+        if (self.data.time - self.ultimo_tempo_comando) >= 6.0:
+            # Só permite curvas após 6 segundos de voo estabilizado
+            if self.data.time >= 6.0:
+                self._sortear_novo_comando("protocolar")
+            else:
+                # Renova o tempo, mas mantém a trajetória reta (gamma = 0)
+                self.ultimo_tempo_comando = self.data.time
 
         # Remove a bola antiga e gera uma nova na ponta do corredor
         self.target_buffer.popleft()
@@ -291,10 +337,7 @@ class OrnitoEnv(gym.Env):
                 self.viewer.sync()
                 self.viewer.cam.lookat = self.data.body('torso').xpos
                 self.viewer.cam.distance = 8.0
-                # self.cont_fis += 1
-                # if self.cont_fis % 100 == 0:
-                #     print(f"Tempo: {self.data.time}, step_fis: {self.cont_fis}")
-                time.sleep((self.dt_ia/13.0)/1.0)
+                time.sleep((self.dt_ia/13.0)/0.25)
 
         obs = self._get_obs()
         reward = self._compute_reward(target_action)
@@ -309,37 +352,17 @@ class OrnitoEnv(gym.Env):
         if terminated:
             reward -= 30.0 # Punição fixa por morte
 
-        truncated = False
+        truncated = bool(self.ep_step >= 5000)
         
+        if truncated:
+            print("Episódio concluído com sucesso!")
+            reward += 50.0 # Bônus de conclusão do episódio máximo
+
         return obs, reward, terminated, truncated, {}
-
-    def _compute_reward(self, action):
-        # 1. Rastreamento de Posição (Gaussiana)
-        # O uso do exp() garante que o erro máximo seja assintótico a 0, 
-        # evitando o "suicídio" da IA por punições infinitas (-dist^2).
-        dist = np.linalg.norm(self.data.qpos[:3] - self.data.mocap_pos[0])
-        r_pos = np.exp(-0.2 * (dist**2)) # Retorna 1 se perfeito, cai suavemente para 0 se longe
-
-        # 2. Estabilidade Angular (Penaliza apenas Roll e Pitch, permite Yaw)
-        # Usamos a matriz de rotação do torso para extrair os ângulos reais de forma limpa
-        mat = self.data.body('torso').xmat.reshape(3, 3)
-        pitch = np.arcsin(np.clip(-mat[2, 0], -1.0, 1.0))
-        roll = np.arctan2(mat[2, 1], mat[2, 2])
-        r_att = np.exp(-2.0 * (pitch**2 + roll**2)) # 1 quando nivelado, decai se inclinar
-
-        # 3. Taxa de Rotação do Corpo (Suavidade)
-        r_omega = np.exp(-0.1 * np.sum(np.square(self.data.qvel[3:6])))
-
-        # Alternativa de Energia: penalizar a variação da ação em relação ao step anterior
-        delta_action = action - self.last_policy_action 
-        r_en = self.energia_atual*np.sum(np.square(delta_action))
-
-        # Retorna o somatório com os pesos baseados no artigo
-        return (self.pos_bonification * r_pos) + (0.2 * r_att) + (0.1 * r_omega) + r_en + self.bonus_sobrevivencia
 
 
     def reset(self, seed = None, options = None):
-        self.cont_fis = 0
+        self.ep_step = 0
 
         if self.enable_curriculo:
             self.set_curriculo()
@@ -358,8 +381,8 @@ class OrnitoEnv(gym.Env):
         self.data.qpos[3:7] = [np.cos(half_angle), 0.0, 0.0, np.sin(half_angle)]
 
         # Dá empuxo decomposto na direção do novo rumo
-        self.data.qvel[0] = self.vel_atual * np.cos(self.heading_angle)
-        self.data.qvel[1] = self.vel_atual * np.sin(self.heading_angle)
+        self.data.qvel[0] = self.vel_inicial * np.cos(self.heading_angle)
+        self.data.qvel[1] = self.vel_inicial * np.sin(self.heading_angle)
 
         lim_hist = 25
         num_sensors = 17 # 12 sensores + 5 ações anteriores
@@ -410,34 +433,6 @@ class OrnitoEnv(gym.Env):
 
 
 # TESTAR ASPECTOS INDIVIDUAIS DO AMBIENTE
-if __name__ == "__main__":
-    import numpy as np
-    import time
-    
+if __name__ == "__main__":    
     # 1. Instancia o ambiente apenas para teste local
-    print("Iniciando ambiente em modo de teste...")
-    env = OrnitoEnv() 
-    obs, info = env.reset()
-
-    print("\n--- Verificação do Setup ---")
-    print(f"Limites de Delta Calculados (q1 a q5): {env.limiter_deltas}")
-    
-    # 2. Criamos uma ação de teste isolada
-    # Exemplo: Comanda ação máxima (1.0) APENAS no índice 0 (esperado: motor_q1)
-    acao_teste = np.array([1.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32)
-    
-    print("\n--- Injetando Ação Teste ---")
-    print(f"Ação enviada pelo 'cérebro': {acao_teste}")
-
-    # Roda alguns steps para o filtro passa-baixa e o integrador processarem
-    for _ in range(10): 
-        obs, reward, terminated, truncated, info = env.step(acao_teste)
-        
-    # 3. Verifica o que chegou de fato nos atuadores do MuJoCo
-    print(f"Buffer de controle do MuJoCo (data.ctrl): {env.data.ctrl[:5]}")
-    
-    # Verifica o estado da física (posição das juntas)
-    # Os índices exatos dependem do seu XML, mas qpos geralmente guarda as posições
-    print(f"Velocidades resultantes (data.qvel): {env.data.qvel[:10]}") 
-    
-    env.close()
+    print("Você clicou no botão Run errado! Rode '(main) treinamentoOrnitos.py' ou 'visualizacaoOrnitos.py'para treinar ou visualizar a IA.")

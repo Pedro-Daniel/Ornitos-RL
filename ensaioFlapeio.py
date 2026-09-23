@@ -6,13 +6,13 @@ from pynput import keyboard
 
 # --- CONFIGURAÇÕES DO BATIMENTO (FLAPPING) ---
 FREQUENCIA = 4.0    # Hz (Batimentos por segundo)
-AMPLITUDE = 0.8     # Fração do range total da junta (0.0 a 1.0)
+AMPLITUDE = 1.0     # Fração do range total da junta (0.0 a 1.0)
 TAXA_CAUDA = 0.5     # Velocidade de resposta da cauda
 
 xml_path = "Modelos XML/Current_Model.xml"
 keys_pressed = set()
-# ctrl_cauda = 0.2341 #Trimado 3Hz
-ctrl_cauda = 0.1296 #Trimado 4Hz
+ctrl_cauda = 0.2341 #Trimado 3Hz
+# ctrl_cauda = 0.1296 #Trimado 4Hz
 # ctrl_cauda = 0.0882 #Trimado 5Hz
 
 def on_press(key):
@@ -47,7 +47,7 @@ def test_flapping_flight(v_initial):
     with mujoco.viewer.launch_passive(model, data) as viewer:
 
         viewer.cam.lookat = data.body('torso').xpos
-        viewer.cam.distance = 4.0
+        viewer.cam.distance = 8.0
         time.sleep(3)
 
         while viewer.is_running() and data.qpos[2] > 0.3:
@@ -81,4 +81,4 @@ def test_flapping_flight(v_initial):
             
             time.sleep(max(0, model.opt.timestep - (time.time() - step_start)))
 
-test_flapping_flight(5.0)
+test_flapping_flight(3.8)

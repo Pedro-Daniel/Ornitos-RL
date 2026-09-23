@@ -9,6 +9,38 @@ from stable_baselines3.common.monitor import Monitor
 
 from ambienteOrnitos import OrnitoEnv
 
+MAX_STEPS = 5000
+
+class ContadorSucessosCallback(BaseCallback):
+    def __init__(self, max_steps=MAX_STEPS, verbose=0):
+        super().__init__(verbose)
+        self.max_steps = max_steps
+        self.sucessos = 0
+        self.total_episodios = 0
+
+    def _on_step(self) -> bool:
+        if "dones" in self.locals:
+            for i, done in enumerate(self.locals["dones"]):
+                if done:
+                    self.total_episodios += 1
+                    info = self.locals["infos"][i]
+                    
+                    # No Gymnasium moderno, a info final fica encapsulada em 'final_info'
+                    ep_info = None
+                    if "episode" in info:
+                        ep_info = info["episode"]
+                    elif "final_info" in info and "episode" in info["final_info"]:
+                        ep_info = info["final_info"]["episode"]
+                        
+                    if ep_info is not None:
+                        if ep_info["l"] >= self.max_steps:
+                            self.sucessos += 1
+        return True
+
+    def _on_training_end(self) -> None:
+        taxa = (self.sucessos / self.total_episodios) * 100 if self.total_episodios > 0 else 0.0
+        print(f"\nO pássaro sobreviveu o percurso {self.sucessos} vezes durante os {self.total_episodios} episódios realizados. Um sucesso de {taxa:.2f}%")
+
 class RelogioGlobalCallback(BaseCallback):
     def __init__(self, verbose=0):
         super(RelogioGlobalCallback, self).__init__(verbose)
@@ -34,7 +66,6 @@ def criar_ambiente(num_steps):
         # IMPORTANTE! NUNCA HABILITE A VISUALIZAÇÃO CASO ESTIVER FAZENDO TREINAMENTO COM MAIS DE UMA INSTÂNCIA! ISSO PROVAVELMENTE VAI TRAVAR O COMPUTADOR! SE FIZER PARE IMEDIATAMENTE!
         # env.set_render_mode(False) # Desative a renderização para o treinamento
         env = Monitor(env)  # Envolve o ambiente com Monitor para registrar estatísticas do episódio
-        env = gym.wrappers.TimeLimit(env, max_episode_steps=5000)
         return env
     return _init
 
@@ -45,29 +76,30 @@ if __name__ == "__main__":
     os.makedirs(models_dir, exist_ok=True)
     os.makedirs(logdir, exist_ok=True)
 
-    NUM_STEPS = 8e6 # Total de steps para o treinamento
+    NUM_STEPS = 1.3e6 # Total de steps para o treinamento
 
-    LEARN_RATE = 3e-4
+    LEARN_RATE = 5e-5
 
 # --- ANOTAÇÕES DO EXPERIMENTO ---
     NOTAS_EXPERIMENTO = """
-    Objetivo: Consolidar subida e descida (arfagem)
+    Objetivo: Consolidar Subidas e Descidas.
     Mudanças:
-    - Trasnfusão de consciência do modelo treinado com 600°/s de velocidade máxima dos servos (modelo 31);
-    - Chão do ambiente de simulação comentado/removido;
-    - Restrição de tocar no chão comentada/removida;
-    - Movimentação multidirecional em torno de Z com sobe e desce, com o setup de 515 entradas.
+    - Transfusão de consciência do modelo sobe desce 8 (gabarito 15°).
+    - Voo protocolar com subida, primeiro de 15° (3s), depois de +30° constante.
+    - A velocidade inicial do pássaro foi igualada com a velocidade alvo.
     """
 
-    # --- CHAVES DE CONTROLE DE TREINAMENTO---
+    # --- CHAVES DE CONTROLE DE TREINAMENTO ---
     CONTINUAR_TREINO = True  # True = Continua o treino de onde parou (na mesma pasta ou em outra), False = Inicia do zero 
     MESMA_PASTA = False  # False = Transfusão de consciência (zera os steps, nova pasta, mantém o cérebro)
 
-    NOME_BASE = "PPO_Sobe_Desce_1" # Nome para a pasta nova, usada se CONTINUAR_TREINO = False.
+    NOME_BASE = "PPO_Sobe_Desce" # Nome para a pasta nova, usada se CONTINUAR_TREINO = False.
     NOME_RUN_ANTIGA = "PPO_Voo_Reto_novo_31" # Nome da pasta do modelo que eu quero continuar treinando (MESMA_PASTA = True) ou fazer a transfusão de consciência (MESMA_PASTA = False).
 
     # Usada apenas quando eu quiser fazer transfusão de consciência.
-    path_do_ultimo_checkpoint = f"{models_dir}/PPO_Voo_Reto_novo_31/PPO_Voo_Reto_novo_31_6599736_steps.zip " # Caminho dentro da pasta de modelos com o nome do modelo que eu quero carregar.
+    # path_do_ultimo_checkpoint = f"{models_dir}/PPO_Voo_Reto_novo_31/PPO_Voo_Reto_novo_31_6699732_steps.zip " # Caminho dentro da pasta de modelos com o nome do modelo que eu quero carregar.
+
+    path_do_ultimo_checkpoint = f"{models_dir}/PPO_Sobe_Desce_8/PPO_Sobe_Desce_8_1199952_steps.zip"
 
     NUM_ENVS = 6
 
@@ -145,7 +177,8 @@ if __name__ == "__main__":
     )
 
     callback_relogio = RelogioGlobalCallback()
-    meus_callbacks = [checkpoint_callback, callback_relogio]
+    callback_sucesso = ContadorSucessosCallback(max_steps=MAX_STEPS)
+    meus_callbacks = [checkpoint_callback, callback_relogio, callback_sucesso]
     # meus_callbacks = [checkpoint_callback]
 
     # --- INÍCIO DO TREINAMENTO ---

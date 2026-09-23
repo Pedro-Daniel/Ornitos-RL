@@ -1,13 +1,19 @@
 <mujoco model="Ornithopter_UnB_Final">
     <compiler angle="degree" coordinate="local" inertiafromgeom="true"/>
     
-    <statistic center="0 0 12" extent="2"/>
+    <statistic center="0 0 50" extent="2"/>
     
     <option timestep="0.0015" integrator="RK4" gravity="0 0 -9.81" density="1.225" viscosity="0.000018">
         <flag energy="enable"/>
     </option>
 
+    <visual>
+        <headlight ambient="0.4 0.4 0.4" diffuse="0.8 0.8 0.8" specular="0.2 0.2 0.2"/>
+    </visual>
+    
     <asset>
+        <texture type="skybox" builtin="gradient" rgb1="0.53 0.81 0.92" rgb2="0.0 0.0 0.0" width="512" height="512"/>
+
         <material name="carbon_fiber" rgba="0.1 0.1 0.1 0.4"/>
         <material name="wing_mylar" rgba="0 0.5 0.8 0.6"/>
         <material name="joint_visual" rgba="1 0 0 1"/>
@@ -16,14 +22,38 @@
 
     <worldbody>
         <light diffuse=".5 .5 .5" pos="0 0 3" dir="0 0 -1"/>
-        <geom type="plane" size="100 100 0.1" rgba=".9 .9 .9 1"/>
+        <!-- <geom type="plane" size="100 100 0.1" rgba=".9 .9 .9 1"/> -->
 
-        <body name="target" mocap="true" pos="0 0 12">
+        <body name="target" mocap="true" pos="0 0 50">
             <geom type="sphere" size="0.1" rgba="1 0 0 0.5" contype="0" conaffinity="0"/>
         </body>
 
+                <body name="target_fut_4" mocap="true" pos="0 0 50">
+            <geom type="sphere" size="0.1" rgba="1 0.5 0 0.5" contype="0" conaffinity="0"/>
+        </body>
+
+        <body name="target_fut_3" mocap="true" pos="0 0 50">
+            <geom type="sphere" size="0.1" rgba="1 0.5 0 0.5" contype="0" conaffinity="0"/>
+        </body>
+
+        <body name="target_fut_2" mocap="true" pos="0 0 50">
+            <geom type="sphere" size="0.1" rgba="1 0.5 0 0.5" contype="0" conaffinity="0"/>
+        </body>
+
+        <body name="target_fut_1" mocap="true" pos="0 0 50">
+            <geom type="sphere" size="0.1" rgba="1 0.5 0 0.5" contype="0" conaffinity="0"/>
+        </body>
+
+        <body name="target_fut_0" mocap="true" pos="0 0 50">
+            <geom type="sphere" size="0.1" rgba="1 0.5 0 0.5" contype="0" conaffinity="0"/>
+        </body>
+
+        <!-- <body name="death_radius" mocap="true" pos="0 0 50">
+            <geom type="sphere" size="3.0" rgba="1 0 0 0.1" contype="0" conaffinity="0"/>
+        </body> -->
+
         <!-- CORPO PRINCIPAL -->
-        <body name="torso" pos="0 0 12">
+        <body name="torso" pos="0 0 50">
             <freejoint name="root"/>
 
             <!-- Fuselagem Principal (GeoGebra): 255g total, motores inclusos aqui -->
