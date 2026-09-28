@@ -5,15 +5,13 @@ import time
 from pynput import keyboard
 
 # --- CONFIGURAÇÕES DO BATIMENTO (FLAPPING) ---
-FREQUENCIA = 4.0    # Hz (Batimentos por segundo)
+FREQUENCIA = 3.0    # Hz (Batimentos por segundo) A máxima deve ser de 3.33Hz
 AMPLITUDE = 1.0     # Fração do range total da junta (0.0 a 1.0)
 TAXA_CAUDA = 0.5     # Velocidade de resposta da cauda
 
 xml_path = "Modelos XML/Current_Model.xml"
 keys_pressed = set()
-ctrl_cauda = 0.2341 #Trimado 3Hz
-# ctrl_cauda = 0.1296 #Trimado 4Hz
-# ctrl_cauda = 0.0882 #Trimado 5Hz
+ctrl_cauda = 0.17213 #Quase Trimado 3Hz
 
 def on_press(key):
     try:
@@ -68,9 +66,9 @@ def test_flapping_flight(v_initial):
             
             mujoco.mj_step(model, data)
             
-            # 3. PITCH CORRIGIDO (Positivo = Nariz para Cima)
+            # 3. PITCH CORRIGIDO
             mat = data.body('torso').xmat.reshape(3, 3)
-            pitch = np.degrees(np.arcsin(mat[2, 0])) # Inverti o sinal aqui
+            pitch = np.degrees(np.arcsin(mat[2, 0]))
             
             if int(data.time * 100) % 50 == 0:
                 print(f"T: {data.time:.1f}s | Alt: {data.qpos[2]:.2f}m | Dist: {data.qpos[0]:.2f}m | VelX: {data.qvel[0]:.1f}m/s | Pitch: {pitch:.1f}° | Cntrl Cauda: {ctrl_cauda:.3f}")

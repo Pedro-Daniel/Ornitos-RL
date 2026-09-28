@@ -137,21 +137,20 @@ class OrnitoEnv(gym.Env):
         if flag == "protocolar":
             cronograma = [
                 (6.0, 15.0),
-                (12.0, 30.0)
-                # (18.0, -15.0),
-                # (24.0, 0.0),
-                # (30.0, 30.0),
-                # (36.0, 0.0),
-                # (42.0, -30.0),
-                # (48.0, 0.0),
-                # (54.0, 15.0),
-                # (60.0, 30.0),
-                # (66.0, 45.0),
-                # (72.0, 0.0),
-                # (78.0, 20.0),
-                # (82.0, -30.0),
-                # (86.0, -60.0),
-                # (90.0, 0.0)
+                (12.0, 0.0),
+                (18.0, -15.0),
+                (24.0, 0.0),
+                (30.0, 15.0),
+                (36.0, 0.0),
+                (42.0, -15.0),
+                (48.0, 0.0),
+                (54.0, 15.0),
+                (60.0, 0.0),
+                (66.0, -15.0),
+                (72.0, 0.0),
+                (78.0, 15.0),
+                (84.0, -15.0),
+                (90.0, 0.0)
             ]
 
             # Encontra em qual estágio do tempo estamos
@@ -227,28 +226,38 @@ class OrnitoEnv(gym.Env):
         dist = np.linalg.norm(self.data.qpos[:3] - self.data.mocap_pos[0])
         r_pos = np.exp(-0.2 * (dist**2)) # Retorna 1 se perfeito, cai suavemente para 0 se longe
 
-        # 2. Estabilidade Angular (Média Móvel do Buffer Preditivo)
-        # Converte o deque para array NumPy para cálculos vetorizados rápidos
-        buffer_np = np.array(self.target_buffer)
-        # Calcula os deltas (dx, dy, dz) entre cada um dos 30 pontos consecutivos
-        diffs = buffer_np[1:] - buffer_np[:-1] 
-        # Extrai os 30 ângulos de inclinação (pitch) do futuro
-        angulos_futuros = np.arctan2(diffs[:, 2], diffs[:, 0]) 
-        # A média gradativa
-        gamma_gradual = np.mean(angulos_futuros) 
-        # Matriz de rotação e ângulos reais do ornitóptero
+        # # 2. Estabilidade Angular (Média Móvel do Buffer Preditivo)
+        # # Converte o deque para array NumPy para cálculos vetorizados rápidos
+        # buffer_np = np.array(self.target_buffer)
+        # # Calcula os deltas (dx, dy, dz) entre cada um dos 30 pontos consecutivos
+        # diffs = buffer_np[1:] - buffer_np[:-1] 
+        # # Extrai os 30 ângulos de inclinação (pitch) do futuro
+        # angulos_futuros = np.arctan2(diffs[:, 2], diffs[:, 0]) 
+        # # A média gradativa
+        # gamma_gradual = np.mean(angulos_futuros) 
+        # # Matriz de rotação e ângulos reais do ornitóptero
+        # mat = self.data.body('torso').xmat.reshape(3, 3)
+        # pitch = np.arcsin(np.clip(-mat[2, 0], -1.0, 1.0))
+        # roll = np.arctan2(mat[2, 1], mat[2, 2])
+        # # O erro agora contra uma rampa suave
+        # erro_pitch = pitch - gamma_gradual
+        # r_att = np.exp(-2.0 * (erro_pitch**2 + roll**2))
+
+        # 2. Estabilidade Angular (Antecipação Extrema / Preditiva)
         mat = self.data.body('torso').xmat.reshape(3, 3)
-        pitch = np.arcsin(np.clip(-mat[2, 0], -1.0, 1.0))
+        pitch = np.arcsin(np.clip(mat[2, 0], -1.0, 1.0))
         roll = np.arctan2(mat[2, 1], mat[2, 2])
-        # O erro agora contra uma rampa suave
-        erro_pitch = pitch - gamma_gradual
+        
+        # O pássaro é cobrado para alinhar sua atitude IMEDIATAMENTE com 
+        # a intenção futura do gerador (target_gamma), 0.6s antes da ladeira chegar.
+        erro_pitch = pitch - self.target_gamma
         r_att = np.exp(-2.0 * (erro_pitch**2 + roll**2))
 
         # 3. Taxa de Rotação do Corpo (Suavidade)
         r_omega = np.exp(-0.1 * np.sum(np.square(self.data.qvel[3:6])))
 
         # Alternativa de Energia: penalizar a variação da ação em relação ao step anterior
-        delta_action = action - self.last_policy_action 
+        delta_action = action - self.last_policy_action
         r_en = np.sum(np.square(delta_action))
 
         # Retorna o somatório com os pesos baseados no artigo
@@ -309,7 +318,7 @@ class OrnitoEnv(gym.Env):
 
         # Atualiza a visualização das esferas para você (0 é a vermelha atual, 1-5 as laranjas)
         self.data.mocap_pos[0] = self.target_buffer[0]
-        # self.data.mocap_pos[6] = self.target_buffer[0] # Mockup área de morte
+        # # self.data.mocap_pos[6] = self.target_buffer[0] # Mockup área de morte
         self.data.mocap_pos[1] = self.target_buffer[6]
         self.data.mocap_pos[2] = self.target_buffer[12]
         self.data.mocap_pos[3] = self.target_buffer[18]
@@ -335,9 +344,14 @@ class OrnitoEnv(gym.Env):
             # Sincroniza o visualizador a cada passo de física se estiver ativo
             if self.render_mode and self.viewer.is_running():
                 self.viewer.sync()
-                self.viewer.cam.lookat = self.data.body('torso').xpos
-                self.viewer.cam.distance = 8.0
+                self.viewer.cam.lookat = self.data.body('target').xpos
+                self.viewer.cam.distance = 6.0
                 time.sleep((self.dt_ia/13.0)/0.25)
+            
+            # Mostra o pitch atual a cada momento.
+            # mat = self.data.body('torso').xmat.reshape(3, 3)
+            # pitch = np.arcsin(np.clip(mat[2, 0]))
+            # print(f"Pitch: {np.rad2deg(pitch):.1f}°")
 
         obs = self._get_obs()
         reward = self._compute_reward(target_action)
@@ -400,9 +414,31 @@ class OrnitoEnv(gym.Env):
 
         # Define a âncora EXATAMENTE onde o pássaro nasceu
         self.pos_ancora_alvo = [0.0, 0.0, 50.0]
+
+        # # --- LÓGICA DA PAREDE ---
+        # # A ladeira de -15° começa aos 6 segundos. A 3.8m/s, isso dá 22.8 metros de distância.
+        # # Colocamos a parede aos 25.5 metros (quase 3 metros APÓS a quina da descida).
+        # dist_parede = (19 * self.vel_inicial)
+        
+        # x_parede = dist_parede * np.cos(self.heading_angle)
+        # y_parede = dist_parede * np.sin(self.heading_angle)
+        
+        # # O Centro da parede fica em 51.6m. 
+        # # Como ela tem 2.0m de "raio" vertical, a borda inferior fica exatamente em 49.6m.
+        # # Se o pássaro voar reto (50.0m), ele bate. Se ele descer a -15°, ele passa por baixo (aprox 49.2m).
+        # z_parede = 51.75
+        
+        # # Quatérnio para girar a parede e deixá-la de frente para o pássaro
+        # quat_w = np.cos(self.heading_angle / 2.0)
+        # quat_z = np.sin(self.heading_angle / 2.0)
+        
+        # # O MuJoCo mapeia os mocaps na ordem do XML. O obstacle_wall será o índice 6.
+        # self.data.mocap_pos[6] = [x_parede, y_parede, z_parede]
+        # self.data.mocap_quat[6] = [quat_w, 0.0, 0.0, quat_z]
+        # # -----------------------------------
+
         self.ultimo_tempo_comando = self.data.time
         
-        self.ultimo_tempo_comando = self.data.time
         self.target_gamma = 0.0
         self.vel_dinamica_target = self.vel_target
 

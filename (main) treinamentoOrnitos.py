@@ -76,17 +76,21 @@ if __name__ == "__main__":
     os.makedirs(models_dir, exist_ok=True)
     os.makedirs(logdir, exist_ok=True)
 
-    NUM_STEPS = 1.3e6 # Total de steps para o treinamento
+    NUM_STEPS = 2e6 # Total de steps para o treinamento
 
-    LEARN_RATE = 5e-5
+    LEARN_RATE = 3e-5
 
 # --- ANOTAÇÕES DO EXPERIMENTO ---
     NOTAS_EXPERIMENTO = """
     Objetivo: Consolidar Subidas e Descidas.
     Mudanças:
-    - Transfusão de consciência do modelo sobe desce 8 (gabarito 15°).
-    - Voo protocolar com subida, primeiro de 15° (3s), depois de +30° constante.
+    - Transfusão de consciência do modelo sobe desce 12 (melhor caso subida 15° e descida 15°).
+    - Teste de Voo protocolar com subidas e descidas de 15° alternadas com retas.
     - A velocidade inicial do pássaro foi igualada com a velocidade alvo.
+    - A angulação máxima do profundor foi alterada para 40° e a do pitch para 35°.
+    - Função de recompensa do erro de pitch preditivo
+    - Removida a parede.
+    - Sinal do valor de pitch agora não invertido!!!
     """
 
     # --- CHAVES DE CONTROLE DE TREINAMENTO ---
@@ -94,12 +98,13 @@ if __name__ == "__main__":
     MESMA_PASTA = False  # False = Transfusão de consciência (zera os steps, nova pasta, mantém o cérebro)
 
     NOME_BASE = "PPO_Sobe_Desce" # Nome para a pasta nova, usada se CONTINUAR_TREINO = False.
-    NOME_RUN_ANTIGA = "PPO_Voo_Reto_novo_31" # Nome da pasta do modelo que eu quero continuar treinando (MESMA_PASTA = True) ou fazer a transfusão de consciência (MESMA_PASTA = False).
+    NOME_RUN_ANTIGA = "PPO_Sobe_Desce_12" # Nome da pasta do modelo que eu quero continuar treinando (MESMA_PASTA = True) ou fazer a transfusão de consciência (MESMA_PASTA = False).
 
     # Usada apenas quando eu quiser fazer transfusão de consciência.
     # path_do_ultimo_checkpoint = f"{models_dir}/PPO_Voo_Reto_novo_31/PPO_Voo_Reto_novo_31_6699732_steps.zip " # Caminho dentro da pasta de modelos com o nome do modelo que eu quero carregar.
 
-    path_do_ultimo_checkpoint = f"{models_dir}/PPO_Sobe_Desce_8/PPO_Sobe_Desce_8_1199952_steps.zip"
+    # path_do_ultimo_checkpoint = f"{models_dir}/PPO_Sobe_Desce_8/PPO_Sobe_Desce_8_1199952_steps.zip"
+    path_do_ultimo_checkpoint = f"{models_dir}/PPO_Sobe_Desce_12/PPO_Sobe_Desce_12_3999840_steps.zip"
 
     NUM_ENVS = 6
 

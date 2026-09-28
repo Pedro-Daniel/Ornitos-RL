@@ -52,6 +52,12 @@
             <geom type="sphere" size="3.0" rgba="1 0 0 0.1" contype="0" conaffinity="0"/>
         </body> -->
 
+        <!-- Parede punitiva (Estilo Trackmania) -->
+        <body name="obstacle_wall" mocap="true" pos="0 0 -10">
+            <!-- size = metades da dimensão (Profundidade 1m, Largura 10m, Altura 4m) -->
+            <geom type="box" size="0.1 4.0 2.0" rgba="0.8 0.2 0.2 0.6" contype="1" conaffinity="1"/>
+        </body>
+
         <!-- CORPO PRINCIPAL -->
         <body name="torso" pos="0 0 50">
             <freejoint name="root"/>
@@ -71,12 +77,12 @@
 
             <!-- ASA ESQUERDA -->
             <body name="asa_esq_flap" pos="0 0.01951 0">
-                <joint name="q1_flap_esq" type="hinge" axis="1 0 0" range="-55 55" damping="0.1"/>
+                <joint name="q1_flap_esq" type="hinge" axis="1 0 0" range="-45 45" damping="0.1"/>
                 <!-- Cilindro de placeholder para satisfazer mjMINVAL -->
                 <geom type="cylinder" size="0.005 0.005" mass="0.0001" material="joint_visual"/>
                 
                 <body name="asa_esq_pitch" pos="0 0.00249 0">
-                    <joint name="q2_pitch_esq" type="hinge" axis="0 1 0" range="-33 33" damping="0.05"/>
+                    <joint name="q2_pitch_esq" type="hinge" axis="0 1 0" range="-35 35" damping="0.05"/>
                     <geom type="cylinder" size="0.005 0.005" mass="0.0001" material="joint_visual" euler="90 0 0"/>
                     
                     <body name="asa_esq">
@@ -87,11 +93,11 @@
 
             <!-- ASA DIREITA -->
             <body name="asa_dir_flap" pos="0 -0.01951 0">
-                <joint name="q3_flap_dir" type="hinge" axis="1 0 0" range="-55 55" damping="0.1"/>
+                <joint name="q3_flap_dir" type="hinge" axis="1 0 0" range="-45 45" damping="0.1"/>
                 <geom type="cylinder" size="0.005 0.005" mass="0.0001" material="joint_visual"/>
                 
                 <body name="asa_dir_pitch" pos="0 -0.00249 0">
-                    <joint name="q4_pitch_dir" type="hinge" axis="0 1 0" range="-33 33" damping="0.05"/>
+                    <joint name="q4_pitch_dir" type="hinge" axis="0 1 0" range="-35 35" damping="0.05"/>
                     <geom type="cylinder" size="0.005 0.005" mass="0.0001" material="joint_visual" euler="90 0 0"/>
                     
                     <body name="asa_dir">
@@ -102,7 +108,7 @@
 
             <!-- CAUDA -->
             <body name="cauda_pitch" pos="-0.37657 0 0">
-                <joint name="q5_pitch_tail" type="hinge" axis="0 1 0" range="-42 42" damping="0.1"/>
+                <joint name="q5_pitch_tail" type="hinge" axis="0 1 0" range="-40 40" damping="0.1"/>
                 <geom type="cylinder" size="0.005 0.005" mass="0.0001" material="joint_visual" euler="90 0 0"/>
                 
                 <body name="cauda">
@@ -113,10 +119,10 @@
     </worldbody>
 
     <actuator>
-        <position name="motor_q1" joint="q1_flap_esq" kp="10" ctrllimited="true" ctrlrange="-55 55"/>
-        <position name="motor_q2" joint="q2_pitch_esq" kp="5" ctrllimited="true" ctrlrange="-33 33"/>
-        <position name="motor_q3" joint="q3_flap_dir" kp="10" ctrllimited="true" ctrlrange="-55 55"/>
-        <position name="motor_q4" joint="q4_pitch_dir" kp="5" ctrllimited="true" ctrlrange="-33 33"/>
-        <position name="motor_q5" joint="q5_pitch_tail" kp="5" ctrllimited="true" ctrlrange="-42 42"/>
+        <position name="motor_q1" joint="q1_flap_esq" kp="10" ctrllimited="true" ctrlrange="-45 45"/>
+        <position name="motor_q2" joint="q2_pitch_esq" kp="5" ctrllimited="true" ctrlrange="-35 35"/>
+        <position name="motor_q3" joint="q3_flap_dir" kp="10" ctrllimited="true" ctrlrange="-45 45"/>
+        <position name="motor_q4" joint="q4_pitch_dir" kp="5" ctrllimited="true" ctrlrange="-35 35"/>
+        <position name="motor_q5" joint="q5_pitch_tail" kp="5" ctrllimited="true" ctrlrange="-40 40"/>
     </actuator>
 </mujoco>
