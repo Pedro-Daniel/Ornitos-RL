@@ -20,8 +20,16 @@ class OrnitoEnv(gym.Env):
         # Atuadores (5 motores)
         self.action_space = spaces.Box(low=-1, high=1, shape=(5,), dtype=np.float32)
         
-        # Observação: ((12 sensores + 5 ações) * 25 frames) + (30 pontos futuro * 3 coords) = 515
-        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(515,), dtype=np.float32)
+        # Observação: ((13 sensores + 5 ações) * 25 frames) + (30 pontos futuro * 3 coords) = 540
+        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(540,), dtype=np.float32)
+
+        # Variáveis para gravação de dados para simular comportamento no ESP32
+        self.buffer_sensores = []
+        self.gravacao_concluida = False
+
+        # Contador de episódios para carrossel de direções em torno de Z
+        self.ep_counter = 0
+        self.multidir_counter = 0
 
         # Variável para armazenar a direção do voo no episódio atual
         self.heading_angle = 0.0
@@ -80,6 +88,38 @@ class OrnitoEnv(gym.Env):
 
     ################ MÉTODOS DO AMBIENTE ################
 
+
+    def _exportar_amostras_c(self, obs, max_amostras=100, nome_arquivo="sensores_voo.h"):
+        # Não faz nada se já gravou o arquivo neste episódio/execução
+        if self.gravacao_concluida:
+            return
+
+        self.buffer_sensores.append(obs)
+
+        # Após atingir o limite de amostras
+        if len(self.buffer_sensores) >= max_amostras:
+            with open(nome_arquivo, 'w') as f:
+                f.write("#ifndef SENSORES_VOO_H\n#define SENSORES_VOO_H\n\n")
+                f.write(f"// Look-up table gerada automaticamente pelo MuJoCo\n")
+                f.write(f"// Duração: ~{max_amostras * self.dt_ia:.2f} segundos ({max_amostras} amostras)\n\n")
+                
+                f.write(f"const int NUM_AMOSTRAS = {max_amostras};\n")
+                f.write(f"const int NUM_SENSORES = {len(obs)};\n\n")
+                
+                f.write(f"const float sensores_voo[{max_amostras}][{len(obs)}] = {{\n")
+                
+                for amostra in self.buffer_sensores:
+                    # Converte cada valor para float com 6 casas decimais e formata para C++
+                    linha = ", ".join([f"{val:.6f}f" for val in amostra])
+                    f.write(f"    {{{linha}}},\n")
+                
+                f.write("};\n\n#endif // SENSORES_VOO_H\n")
+            
+            print(f"\n[EXPORTAÇÃO] Matriz de {max_amostras}x{len(obs)} salva com sucesso em '{nome_arquivo}'!")
+            self.gravacao_concluida = True
+
+
+
     def set_global_step(self, step_atual):
         # O Callback chama isso a cada frame apenas para atualizar o número de steps atual
         self.global_step = step_atual
@@ -137,20 +177,20 @@ class OrnitoEnv(gym.Env):
         if flag == "protocolar":
             cronograma = [
                 (6.0, 15.0),
-                (12.0, 0.0),
-                (18.0, -15.0),
-                (24.0, 0.0),
-                (30.0, 15.0),
-                (36.0, 0.0),
-                (42.0, -15.0),
-                (48.0, 0.0),
-                (54.0, 15.0),
-                (60.0, 0.0),
-                (66.0, -15.0),
-                (72.0, 0.0),
-                (78.0, 15.0),
-                (84.0, -15.0),
-                (90.0, 0.0)
+                (12.0, 30.0)
+                # (18.0, -15.0),
+                # (24.0, 0.0),
+                # (30.0, 15.0),
+                # (36.0, 0.0),
+                # (42.0, -15.0),
+                # (48.0, 0.0),
+                # (54.0, 15.0),
+                # (60.0, 0.0),
+                # (66.0, -15.0),
+                # (72.0, 0.0),
+                # (78.0, 15.0),
+                # (84.0, -15.0),
+                # (90.0, 0.0)
             ]
 
             # Encontra em qual estágio do tempo estamos
@@ -269,8 +309,11 @@ class OrnitoEnv(gym.Env):
         mat_global_to_local = self.data.body('torso').xmat.reshape(3, 3).T
 
         # Pega a gravidade global e projeta para o referencial do pássaro (3 valores)
-        gravity_global = np.array([0.0, 0.0, -1.0])
-        g_local = mat_global_to_local @ gravity_global
+        # gravity_global = np.array([0.0, 0.0, -1.0])
+        # g_local = mat_global_to_local @ gravity_global
+
+        # Extrai o quatérnio [w, x, y, z] diretamente do MuJoCo
+        quat = self.data.qpos[3:7]
 
         pqr = self.data.qvel[3:6]  # Vel Angular
         qj = self.data.qpos[7:12]  # Juntas
@@ -279,14 +322,13 @@ class OrnitoEnv(gym.Env):
         vel_local = mat_global_to_local @ vel_global
         vx = np.array([vel_local[0]]) 
         
-        # Concatena g_local(3) + pqr(3) + qj(5) + vx(1) + last_action(5) = 17 valores
-        current_obs = np.concatenate([g_local, pqr, qj, vx, self.last_policy_action])
+        # Concatena quat(4) + pqr(3) + qj(5) + vx(1) + last_action(5) = 18 valores
+        current_obs = np.concatenate([quat, pqr, qj, vx, self.last_policy_action])
         self.history.append(current_obs)
         
         # Trajetória Futura (Look-ahead: 30 pontos)
         future_traj = []
         for i in range(1, self.lim_fut + 1):
-
             # i=0 é a posição atual, i=1 a 30 são os futuros
             pos_f_global = self.target_buffer[i] - self.data.qpos[:3]
             pos_f_local = mat_global_to_local @ pos_f_global
@@ -303,13 +345,13 @@ class OrnitoEnv(gym.Env):
         self.ep_step += 1
 
         # 2. Lógica do Alvo e do Buffer (Atualiza a 50Hz)
-        if (self.data.time - self.ultimo_tempo_comando) >= 6.0:
-            # Só permite curvas após 6 segundos de voo estabilizado
-            if self.data.time >= 6.0:
-                self._sortear_novo_comando("protocolar")
-            else:
-                # Renova o tempo, mas mantém a trajetória reta (gamma = 0)
-                self.ultimo_tempo_comando = self.data.time
+        # if (self.data.time - self.ultimo_tempo_comando) >= 6.0:
+        #     # Só permite curvas após 6 segundos de voo estabilizado
+        #     if self.data.time >= 6.0:
+        #         self._sortear_novo_comando("protocolar")
+        #     else:
+        #         # Renova o tempo, mas mantém a trajetória reta (gamma = 0)
+        #         self.ultimo_tempo_comando = self.data.time
 
         # Remove a bola antiga e gera uma nova na ponta do corredor
         self.target_buffer.popleft()
@@ -346,7 +388,7 @@ class OrnitoEnv(gym.Env):
                 self.viewer.sync()
                 self.viewer.cam.lookat = self.data.body('target').xpos
                 self.viewer.cam.distance = 6.0
-                time.sleep((self.dt_ia/13.0)/0.25)
+                time.sleep((self.dt_ia/13.0)/1.0)
             
             # Mostra o pitch atual a cada momento.
             # mat = self.data.body('torso').xmat.reshape(3, 3)
@@ -356,12 +398,24 @@ class OrnitoEnv(gym.Env):
         obs = self._get_obs()
         reward = self._compute_reward(target_action)
         
+        # Descomente a linha abaixo para gravar os primeiros 100 steps do voo em um arquivo .h
+        # self._exportar_amostras_c(obs, max_amostras=100)
+
         lim_area = 3.0
 
+        # Extrai a orientação atual no step
+        mat = self.data.body('torso').xmat.reshape(3, 3)
+        pitch = np.arcsin(np.clip(mat[2, 0], -1.0, 1.0))
+        roll = np.arctan2(mat[2, 1], mat[2, 2])
+        
+        # Limite de 90 graus (pi/2 radianos)
+        morte_orientacao = abs(pitch) > (np.pi/2.0) or abs(roll) > (np.pi/2.0)
+
         dist = np.linalg.norm(self.data.qpos[:3] - self.data.mocap_pos[0])
-        # bateu_no_chao = self.data.qpos[2] < 1.0
-        # terminated = bool(dist > lim_area or bateu_no_chao) # Fora da área
-        terminated = bool(dist > lim_area) # Fora da área de sobrevivência
+        
+        # O episódio termina se sair da área OU se capotar/empinar 90°
+        # terminated = bool(dist > lim_area)
+        terminated = bool(dist > lim_area or morte_orientacao)
 
         if terminated:
             reward -= 30.0 # Punição fixa por morte
@@ -386,9 +440,26 @@ class OrnitoEnv(gym.Env):
 
         self.data.qpos[2] = 50.0  # Altitude de spawn
 
-        # Sorteia uma direção aleatória em radianos (-PI a +PI)
-        self.heading_angle = np.random.uniform(-np.pi, np.pi)
+        # --- LÓGICA DO CARROSSEL MULTIDIRECIONAL ---
+
+        if self.ep_counter % 10 == 0: # 1 episódio fixo + 9 aleatórios
+            # Distribui as 9 direções ortogonais/diagonais.
+            angulos_fixos = [
+                0.0, 0.25*np.pi, 0.5*np.pi, 0.75*np.pi, np.pi,
+                -np.pi, -0.75*np.pi, -0.5*np.pi, -0.25*np.pi
+            ]
+            self.heading_angle = angulos_fixos[self.multidir_counter]
+            self.multidir_counter = (self.multidir_counter + 1) % 9
+        else:
+            # 9 episódios completamente aleatórios
+            self.heading_angle = np.random.uniform(-np.pi, np.pi)
+        
+        self.ep_counter += 1
+        
+        # print(f"Ángulo do episódio (graus): {np.rad2deg(self.heading_angle)}")
+        self.heading_angle = 0.0
         self.target_heading = self.heading_angle
+        # -------------------------------------------
         
         # Converte o ângulo Z em um Quatérnio [w, x, y, z] para rotacionar o pássaro
         half_angle = self.heading_angle / 2.0
@@ -399,7 +470,7 @@ class OrnitoEnv(gym.Env):
         self.data.qvel[1] = self.vel_inicial * np.sin(self.heading_angle)
 
         lim_hist = 25
-        num_sensors = 17 # 12 sensores + 5 ações anteriores
+        num_sensors = 18 # 13 sensores + 5 ações anteriores
         self.history.clear()
 
         # Preenche com zeros se o histórico ainda não estiver cheio
