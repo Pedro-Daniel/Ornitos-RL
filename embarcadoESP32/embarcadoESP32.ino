@@ -4,7 +4,7 @@
 #include <sensores_voo.h>
 
 // Pinos para os 5 LEDs (Simulando os motores q1 a q5)
-const int pinosLED[5] = {13, 12, 14, 27, 26}; 
+const int pinosLED[5] = {13, 19, 14, 27, 26}; 
 
 // Configurações do PWM do ESP32 (LEDC) - API v3.x
 const int freqPWM = 5000;
@@ -47,7 +47,6 @@ const float limiter_deltas[5] = {0.26, 0.33428571, 0.26, 0.33428571, 0.2925}; //
 // ---------------------------------------------------------
 
 void inferir_acao(const float* obs_atual, float* saida_motores) {
-  // Arrays locais para armazenar a saída de cada camada (1 KB cada, seguro para a Stack configurada)
   float ativacao_camada1[256];
   float ativacao_camada2[256];
 
@@ -59,10 +58,7 @@ void inferir_acao(const float* obs_atual, float* saida_motores) {
     for (int j = 0; j < 540; j++) {
       soma += mlp_extractor_policy_net_0_weight[i][j] * obs_atual[j];
     }
-    // Função de ativação Tanh
     ativacao_camada1[i] = tanh(soma);
-    // Substitua a linha: saida_motores[i] = soma; por:
-    saida_motores[i] = constrain(soma, -1.0f, 1.0f);
   }
 
   // ---------------------------------------------------------
@@ -73,7 +69,6 @@ void inferir_acao(const float* obs_atual, float* saida_motores) {
     for (int j = 0; j < 256; j++) {
       soma += mlp_extractor_policy_net_2_weight[i][j] * ativacao_camada1[j];
     }
-    // Função de ativação Tanh
     ativacao_camada2[i] = tanh(soma);
   }
 
@@ -85,8 +80,7 @@ void inferir_acao(const float* obs_atual, float* saida_motores) {
     for (int j = 0; j < 256; j++) {
       soma += action_net_weight[i][j] * ativacao_camada2[j];
     }
-    // O SB3 usa saída linear por padrão. O limite [-1, 1] é garantido pelo constrain no atuador.
-    // saida_motores[i] = soma;
+    // O limite [-1, 1] é aplicado EXCLUSIVAMENTE AQUI para as 5 saídas finais
     saida_motores[i] = constrain(soma, -1.0f, 1.0f);
   }
 }
@@ -114,7 +108,15 @@ void TaskInferenciaIA(void *pvParameters) {
       last_policy_action[i] = acao_limitada;
       target_action[i]      = acao_limitada;
     }
+    
+    // CORREÇÃO 1: Impede que o array leia lixo de memória
     indice_amostra_atual++;
+    if (indice_amostra_atual >= NUM_AMOSTRAS_TESTE) {
+      indice_amostra_atual = 0;
+    }
+
+    // CORREÇÃO 2: Devolve o fôlego para o processador e crava a taxa em 50Hz
+    vTaskDelayUntil(&xLastWakeTime, xFrequency);
   }
 }
 
